@@ -13,19 +13,35 @@ It downloads only what changed. If everything is already current, it downloads n
 
 ## Use
 
-Run it with no arguments in a terminal and a menu opens:
+Run it with no arguments in a terminal and a menu opens. It starts with a short overview of your addons, in plain words:
 
 ```
-Install / update selected addons
-Select addons
-Status
-Settings
-Exit
+╔════════════════════════════════════════════════════════════╗
+║ WoW Forever  ·  Essentials Updater                  v1.1.1 ║
+╚════════════════════════════════════════════════════════════╝
+
+Your addons ────────────────────────────────────────────────
+
+  ●  Spoken          3.5.1     up to date
+  ●  LuzennaForever  0.1.0     update available → 1.0.0  14.0 KB to download
+  ●  NodeSight       ·         not installed  48.0 KB to download
+  ○  Dialogue UI               not selected
+
+What would you like to do?
+
+  ► Install or update my addons    3 to install or update, 2.5 GB
+    Choose which addons I want
+    See what's installed
+    Settings
+    Quit
 ```
 
-- **Select addons** is a checkbox list (arrows and Space, `a` for all/none, Enter to confirm, `q` to cancel). Choosing Spoken also asks whether to include the Zones and Books audio. Your choice is saved in the config, and addons you don't select are never touched.
-- **Settings** sets the AddOns folder (when several WoW installs exist) and the Spoken voice language.
+- **Install or update my addons** downloads only what changed, shows a progress bar per addon, and ends with a summary of what was updated and what failed.
+- **Choose which addons I want** is a checkbox list (arrows and Space, `a` for all/none, Enter to confirm, Esc to cancel). Choosing Spoken also asks whether to include the Zone and Book voices. Your choice is saved in the config, and addons you don't select are never touched.
+- **See what's installed** shows versions, status and download sizes in detail.
+- **Settings** sets the WoW AddOns folder (when several installs exist) and the Spoken voice language.
 - Without a keyboard-capable terminal the same lists take numbers instead.
+- Colour and symbols are used on a real terminal only. Redirected output, `NO_COLOR=1` and scripts get plain text. Set `WFE_ASCII=1` for plain symbols if boxes or arrows show as `?` in your console.
 
 All four addons are selected by default. Commands skip the menu:
 
@@ -147,6 +163,7 @@ Sources plug in through `src/sources/source.js`. A Wago source is possible, but 
 4. **Zips are unpacked into `Interface/.wow-forever-essentals-updater`**, on the same drive as AddOns. Paths are normalised (backslashes, wrapper folders, double nesting) and unsafe paths are refused.
 5. **Each addon only writes its own folders.** Spoken writes folders named `Spoken*`; LuzennaForever, NodeSight and Dialogue UI write `LuzennaForever`, `NodeSight` and `DialogueUI`. Everything else in the zip is ignored, and other addons and `WTF/` are never touched. The Spoken zips also contain `VoiceOverRedux` and `ZoneLore`. These are empty placeholders named after the addons' old names, only useful for carrying over settings from those old addons, so they are not installed.
 6. **Folders are swapped in by renaming.** Old folders move to a backup and new ones move in. If anything fails, everything is moved back. A journal lets the next run finish or undo a swap that was interrupted by a crash (including one left by the old `spoken-updater` name).
+7. **A folder that is in use is replaced in place.** Windows refuses to rename a folder while any program is working inside it (a terminal or editor opened in that folder). In that case the folder's contents are moved to the backup and the new files are moved into the same folder, with the same rollback on failure. If a file inside is itself held open, nothing is changed and the message says which folder to free up.
 
 ## Development
 
@@ -157,6 +174,8 @@ make               # same, via make
 ```
 
 The build bundles `src/` with esbuild into a Node [single executable application](https://nodejs.org/api/single-executable-applications.html). It downloads the official Node binaries for each platform, checks them against nodejs.org's SHASUMS256, and injects the bundle. Both targets build from Windows or Linux. Each binary is about 85–120 MB because it contains Node.
+
+Console look and feel lives in `src/ui.js` (colours, symbols, banner) and `src/tui.js` (the lists); it all falls back to plain text off a terminal.
 
 To add an addon, add a group in `src/catalog.js` (`GROUPS` and `buildCatalog`); a single-folder addon released on plain tags is one `plainAddon(...)` call.
 
