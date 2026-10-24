@@ -25,8 +25,8 @@ function fakeFetch(tag, body, { digest = true, extra = {} } = {}) {
 }
 
 test('asset names per platform', () => {
-  assert.equal(selfAssetName('win32', 'x64'), 'spoken-updater.exe');
-  assert.equal(selfAssetName('linux', 'x64'), 'spoken-updater-linux-x64');
+  assert.equal(selfAssetName('win32', 'x64'), 'wow-forever-essentals-updater.exe');
+  assert.equal(selfAssetName('linux', 'x64'), 'wow-forever-essentals-updater-linux-x64');
   assert.equal(selfAssetName('darwin', 'arm64'), null);
   assert.equal(selfAssetName('linux', 'arm64'), null);
 });

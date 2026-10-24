@@ -56,3 +56,13 @@ test('WoW process detection matches game clients only', async () => {
   });
   assert.deepEqual(linuxProcesses(proc).sort(), ['WowB.exe', 'WowClassicB.exe']);
 });
+
+test('semver letter suffixes are later builds only when asked', () => {
+  const L = { letters: true };
+  assert.equal(semver.compare('1.0.5-b', '1.0.5', L), 1);
+  assert.equal(semver.compare('1.0.5-f', '1.0.5-b', L), 1);
+  assert.equal(semver.compare('1.0.6', '1.0.5-f', L), 1);
+  assert.equal(semver.compare('1.0.5-rc1', '1.0.5', L), -1, 'a real prerelease stays one');
+  assert.equal(semver.compare('1.0.5-b', '1.0.5'), -1, 'default: -b is a prerelease');
+  assert.equal(semver.clean('v1.0.5-f', L), '1.0.5-f');
+});

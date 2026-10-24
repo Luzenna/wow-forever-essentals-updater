@@ -10,13 +10,13 @@ import * as log from './log.js';
 import { HttpError, USER_AGENT, withRetry } from './http.js';
 import { download } from './download.js';
 
-export const SELF_REPO = 'Luzenna/spoken-updater';
+export const SELF_REPO = 'Luzenna/wow-forever-essentals-updater';
 
 /** Release asset for this platform, or null when we don't ship one. */
 export function selfAssetName(platform = process.platform, arch = process.arch) {
   if (arch !== 'x64') return null;
-  if (platform === 'win32') return 'spoken-updater.exe';
-  if (platform === 'linux') return 'spoken-updater-linux-x64';
+  if (platform === 'win32') return 'wow-forever-essentals-updater.exe';
+  if (platform === 'linux') return 'wow-forever-essentals-updater-linux-x64';
   return null;
 }
 
@@ -49,7 +49,7 @@ export async function selfUpdate(o) {
   const sha = a?.digest && /^sha256:([0-9a-f]{64})$/i.exec(a.digest)?.[1].toLowerCase();
   if (!a || !sha) throw new Error(`release ${rel.tag_name} has no verifiable ${name}`);
 
-  log.info(`Updating spoken-updater ${o.version} -> ${latest}...`);
+  log.info(`Updating wow-forever-essentals-updater ${o.version} -> ${latest}...`);
   const dest = path.join(o.cacheDir, 'self', latest, name);
   const { file } = await download(
     { name, url: a.browser_download_url, size: a.size, sha256: sha },
@@ -114,6 +114,6 @@ export async function trySelfUpdate(version, cacheDir) {
   try {
     await selfUpdate({ version, exe, cacheDir });
   } catch (e) {
-    log.warn(`Could not check for a spoken-updater update: ${/** @type {Error} */ (e)?.message ?? e}`);
+    log.warn(`Could not check for a wow-forever-essentals-updater update: ${/** @type {Error} */ (e)?.message ?? e}`);
   }
 }

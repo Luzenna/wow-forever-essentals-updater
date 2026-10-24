@@ -7,15 +7,15 @@ import path from 'node:path';
 import readline from 'node:readline/promises';
 import * as semver from './semver.js';
 import * as log from './log.js';
-import { buildCatalog } from './catalog.js';
+import { buildCatalog, GROUPS } from './catalog.js';
 import { loadConfig, saveConfig, loadState, saveState, stateKey } from './config.js';
 import { detect } from './detect/detect.js';
 import { findChild } from './detect/fold.js';
 import { tocFiles, readFolderToc, folderSupports, FOREVER_INTERFACE } from './toc.js';
 import { cachePath, download, remainingBytes } from './download.js';
-import { extractZip, findAddonRoots, isSpokenFolder, isPlaceholder, uncompressedSize } from './extract.js';
-import { swapIn, recover, workDirFor, pendingJournal, removeLeftovers } from './swap.js';
-import { acquireLock } from './lock.js';
+import { extractZip, findAddonRoots, isPlaceholder, uncompressedSize } from './extract.js';
+import { swapIn, recover, workDirFor, legacyWorkDirFor, pendingJournal, removeLeftovers } from './swap.js';
+import { acquireLock, legacyInstanceRunning } from './lock.js';
 import { createProgress } from './progress.js';
 import { freeBytes, deviceOf, runningWow } from './platform.js';
 
@@ -76,16 +76,21 @@ export function treeStats(dir) {
  * Folder names an item had before this tool ever installed it (e.g. installed by
  * hand or by another manager), guessed from the asset name: "SpokenPlayer-2.3.2.zip"
  * -> SpokenPlayer; the "SpokenQuestsAudioAll" bundle -> SpokenQuestsAudio<Faction>.
- * @param {string} addons @param {import('./sources/source.js').Release} rel
+ * Items that know their folder names up front ("NodeSight") just look those up.
+ * @param {string} addons @param {import('./catalog.js').Item} item @param {import('./sources/source.js').Release} rel
  */
-function adoptFolders(addons, rel) {
-  const base = rel.asset.name.replace(/-v?\d+\.\d+\.\d+.*\.zip$/i, '').replace(/\.zip$/i, '');
+function adoptFolders(addons, item, rel) {
   let names;
   try {
     names = fs.readdirSync(addons, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name);
   } catch {
     return [];
   }
+  if (item.folders) {
+    const want = item.folders.map((f) => f.toLowerCase());
+    return names.filter((n) => want.includes(n.toLowerCase()));
+  }
+  const base = rel.asset.name.replace(/-v?\d+\.\d+\.\d+.*\.zip$/i, '').replace(/\.zip$/i, '');
   const exact = names.filter((n) => n.toLowerCase() === base.toLowerCase());
   if (exact.length) return exact;
   if (/All$/.test(base)) {
@@ -110,8 +115,9 @@ export function inspect(item, rel, addons, st) {
   if (!rel) {
     return { ...plan, status: 'unavailable', reason: item.optional ? 'not published for this language' : 'no release found' };
   }
-  // Older state files may list non-Spoken placeholder folders; they're not ours to check.
-  const recorded = (st ? Object.keys(st.folders) : adoptFolders(addons, rel)).filter(isSpokenFolder);
+  const o = { letters: !!item.letterSuffix };
+  // Older state files may list placeholder folders the item doesn't own; they're not ours to check.
+  const recorded = (st ? Object.keys(st.folders) : adoptFolders(addons, item, rel)).filter(item.owns);
   if (!recorded.length) return { ...plan, status: 'not-installed', reason: 'not installed', act: true };
 
   /** @type {{ name: string, version: string | null, recordedVersion: string | null }[]} */
@@ -137,18 +143,18 @@ export function inspect(item, rel, addons, st) {
   let primary = st ? seen.filter((f) => f.recordedVersion === st.version) : [];
   if (!primary.length) primary = seen.filter((f) => f.version);
   const versions = primary.map((f) => f.version).filter((v) => v !== null);
-  const installed = versions.length ? versions.reduce((a, b) => (semver.compare(a, b) <= 0 ? a : b)) : st?.version ?? null;
+  const installed = versions.length ? versions.reduce((a, b) => (semver.compare(a, b, o) <= 0 ? a : b)) : st?.version ?? null;
   plan.installed = installed;
 
   const leftovers = (item.replaces?.folders ?? []).filter((n) => findChild(addons, n, { dirsOnly: true }));
   const exclusionChanged = !!st && [...(st.exclude ?? [])].sort().join() !== [...(item.exclude ?? [])].sort().join();
-  if (installed && semver.compare(installed, rel.version) === 0) {
+  if (installed && semver.compare(installed, rel.version, o) === 0) {
     if (leftovers.length) return { ...plan, status: 'outdated', reason: `old folders to remove: ${leftovers.join(', ')}`, act: true };
     if (exclusionChanged) return { ...plan, status: 'outdated', reason: 'zones/books setting changed', act: true };
     return plan;
   }
   // Never downgrade: a newer build (from Wago, or a dev copy) is left alone.
-  if (installed && semver.compare(installed, rel.version) > 0) return { ...plan, reason: `newer than the latest release (${rel.version})` };
+  if (installed && semver.compare(installed, rel.version, o) > 0) return { ...plan, reason: `newer than the latest release (${rel.version})` };
   // Upstream sometimes ships a .toc whose Version differs from the tag. If the
   // folders still hold exactly what we installed from this tag, it is current.
   if (st && st.tag === rel.tag && primary.length && primary.every((f) => f.version === f.recordedVersion)) {
@@ -157,10 +163,15 @@ export function inspect(item, rel, addons, st) {
   return { ...plan, status: 'outdated', reason: `${installed ?? 'unknown'} -> ${rel.version}`, act: true };
 }
 
-/** @param {Deps} deps */
-function makeAsk(deps) {
+/** One line of input from the terminal, or deps.ask when a test supplies it. @param {Deps} deps */
+export function makeAsk(deps) {
   return deps.ask ?? (async (/** @type {string} */ q) => {
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    // Without this, Ctrl+C only pauses stdin: the question never settles and the process exits silently with 0.
+    rl.on('SIGINT', () => {
+      rl.close();
+      process.exit(130);
+    });
     try {
       return await rl.question(q);
     } finally {
@@ -207,8 +218,12 @@ export async function resolveAddons(opts, deps, cfg) {
 }
 
 /** @param {Options} opts @param {import('./config.js').Config} cfg */
-function catalogFor(opts, cfg) {
-  const items = buildCatalog({ language: opts.lang ?? cfg.language, includeZones: cfg.include_zones, includeBooks: cfg.include_books });
+export function catalogFor(opts, cfg) {
+  // --only can name any item, selected or not.
+  const items = buildCatalog({
+    language: opts.lang ?? cfg.language, includeZones: cfg.include_zones, includeBooks: cfg.include_books,
+    selected: opts.only?.length ? undefined : cfg.selected,
+  });
   if (opts.only?.length) {
     const unknown = opts.only.filter((id) => !items.some((i) => i.id === id));
     if (unknown.length) {
@@ -280,13 +295,13 @@ async function installItem(plan, addons, deps, cfg, state) {
     const excluded = new Set(plan.item.exclude ?? []);
     const keep = roots.filter((r) => {
       let why = null;
-      if (!isSpokenFolder(r.name)) why = 'not a Spoken folder';
-      else if (isPlaceholder(r.dir)) why = 'an empty placeholder for a retired folder';
+      if (!plan.item.owns(r.name)) why = `not a folder of ${plan.item.id}`;
+      else if (plan.item.placeholders && isPlaceholder(r.dir)) why = 'an empty placeholder for a retired folder';
       else if (excluded.has(r.name.toLowerCase())) why = 'switched off in the config';
       if (why) log.debug(`${tag} not installing ${r.name} (${why})`);
       return !why;
     });
-    if (!keep.length) throw new Error('the zip contains no Spoken addon folders');
+    if (!keep.length) throw new Error(`the zip contains no ${plan.item.title} addon folders`);
     for (const r of keep) {
       if (!folderSupports(r.dir, FOREVER_INTERFACE)) {
         log.warn(`${tag} ${r.name}: no .toc lists Interface ${FOREVER_INTERFACE}; the Forever client may mark it incompatible`);
@@ -298,7 +313,7 @@ async function installItem(plan, addons, deps, cfg, state) {
 
     // Remove, in the same transaction: folders this item installed before that the
     // new release no longer has (or that are now switched off), and the folders of
-    // the retired addons this item replaces. Only Spoken-named folders, ever.
+    // the retired addons this item replaces. Only folders this item owns, ever.
     const key = stateKey(addons);
     const mine = state.installs[key] ?? {};
     const keepNames = new Set(keep.map((r) => r.name.toLowerCase()));
@@ -306,7 +321,7 @@ async function installItem(plan, addons, deps, cfg, state) {
       ...Object.keys(mine[plan.item.id]?.folders ?? {}),
       ...(plan.item.replaces?.items ?? []).flatMap((id) => Object.keys(mine[id]?.folders ?? {})),
       ...(plan.item.replaces?.folders ?? []),
-    ])].filter((n) => isSpokenFolder(n) && !keepNames.has(n.toLowerCase()) && findChild(addons, n, { dirsOnly: true }));
+    ])].filter((n) => plan.item.owns(n) &&!keepNames.has(n.toLowerCase()) && findChild(addons, n, { dirsOnly: true }));
     for (const n of remove) log.info(`${tag} removing old folder ${n}`);
 
     swapIn({ addons, roots: keep, remove, workDir });
@@ -347,7 +362,8 @@ async function installItem(plan, addons, deps, cfg, state) {
  */
 export async function makePlan(opts, deps) {
   const cfg = loadConfig(deps.configDir);
-  const items = catalogFor(opts, cfg);
+  // With --only, other items are neither queried nor reported: an unrelated repo being down must not fail the run.
+  const items = catalogFor(opts, cfg).filter((i) => !opts.only?.length || opts.only.includes(i.id));
   const addons = await resolveAddons(opts, deps, cfg);
   const state = loadState(deps.configDir);
   const mine = state.installs[stateKey(addons)] ?? {};
@@ -386,7 +402,9 @@ const describe = (p) => {
 export async function update(opts, deps) {
   let { cfg, addons, state, plans } = await makePlan(opts, deps);
   const workDir = workDirFor(addons);
-  const pending = pendingJournal(workDir);
+  // The old tool's work dir is only ours to recover while no old copy is running (its lock is separate from ours).
+  const legacyDirs = legacyInstanceRunning(deps.env) ? [] : [legacyWorkDirFor(addons)];
+  const pending = pendingJournal(workDir) || legacyDirs.some(pendingJournal);
   log.info(`AddOns folder: ${addons}`);
   if (!fs.existsSync(addons)) log.info('  (does not exist yet; it will be created)');
 
@@ -439,11 +457,11 @@ export async function update(opts, deps) {
   }
   try {
     if (pending) {
-      log.warn(String(recover(workDir)));
+      for (const w of [...legacyDirs, workDir]) if (pendingJournal(w)) log.warn(String(recover(w)));
       ({ cfg, addons, state, plans } = await makePlan({ ...opts, addons }, deps));
       todo = plans.filter((p) => p.act);
     }
-    for (const d of removeLeftovers(workDir)) log.debug(`removed leftover ${d}`);
+    for (const w of [...legacyDirs, workDir]) for (const d of removeLeftovers(w)) log.debug(`removed leftover ${d}`);
     report();
     if (!todo.length) {
       log.info('\nEverything is up to date.');
@@ -478,7 +496,7 @@ export async function update(opts, deps) {
 
 /** @param {Options} opts @param {Deps} deps */
 export async function status(opts, deps) {
-  const { addons, plans } = await makePlan(opts, deps);
+  const { cfg, addons, plans } = await makePlan(opts, deps);
   log.info(`AddOns folder: ${addons}\n`);
   const rows = [['ITEM', 'INSTALLED', 'LATEST', 'STATUS', 'ON DISK', 'DOWNLOAD', 'SOURCE']];
   for (const p of plans) {
@@ -494,7 +512,10 @@ export async function status(opts, deps) {
   }
   const w = rows[0].map((_, c) => Math.max(...rows.map((r) => r[c].length)));
   for (const r of rows) log.info(r.map((cell, c) => cell.padEnd(w[c])).join('  ').trimEnd());
-  const pending = plans.filter((p) => p.act);
+  const off = GROUPS.filter((g) => !opts.only?.length && !cfg.selected.includes(g.id));
+  if (off.length) log.info(`\nNot selected (left alone): ${off.map((g) => g.title).join(', ')}`);
+  // Not p.act: with --only that is set for every named item, installed or not.
+  const pending = plans.filter((p) => p.act && p.status !== 'current');
   log.info(pending.length ? `\n${pending.length} item(s) need installing or updating. Run without arguments to update.` : '\nEverything is up to date.');
   return 0;
 }

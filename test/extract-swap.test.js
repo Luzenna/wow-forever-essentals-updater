@@ -90,7 +90,7 @@ function addonsFixture() {
     'SpokenContributions/SpokenContributions.toc': toc('2.3.2'),
   });
   const roots = ['SpokenPlayer', 'SpokenContributions'].map((name) => ({ name, dir: path.join(staging, name) }));
-  return { root, addons, roots, work: path.join(root, 'Interface', '.spoken-updater') };
+  return { root, addons, roots, work: path.join(root, 'Interface', '.wow-forever-essentals-updater') };
 }
 
 test('swap replaces Spoken folders and leaves everything else alone', () => {

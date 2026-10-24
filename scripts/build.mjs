@@ -5,7 +5,7 @@
 //      snapshot, so the blob is portable across platforms)
 //   3. the official node binary of the same version is downloaded for each target,
 //      checked against nodejs.org's SHASUMS256.txt, and the blob is injected into it
-// Output: dist/spoken-updater.exe and dist/spoken-updater-linux-x64
+// Output: dist/wow-forever-essentals-updater.exe and dist/wow-forever-essentals-updater-linux-x64
 import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
@@ -22,8 +22,8 @@ const NODE = process.version; // the blob format must match the runtime it's inj
 const FUSE = 'NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2';
 
 const TARGETS = [
-  { name: 'win-x64', archive: `node-${NODE}-win-x64.zip`, member: `node-${NODE}-win-x64/node.exe`, out: 'spoken-updater.exe' },
-  { name: 'linux-x64', archive: `node-${NODE}-linux-x64.tar.gz`, member: `node-${NODE}-linux-x64/bin/node`, out: 'spoken-updater-linux-x64' },
+  { name: 'win-x64', archive: `node-${NODE}-win-x64.zip`, member: `node-${NODE}-win-x64/node.exe`, out: 'wow-forever-essentals-updater.exe' },
+  { name: 'linux-x64', archive: `node-${NODE}-linux-x64.tar.gz`, member: `node-${NODE}-linux-x64/bin/node`, out: 'wow-forever-essentals-updater-linux-x64' },
 ];
 
 const only = process.argv.slice(2);
@@ -33,14 +33,14 @@ fs.mkdirSync(dist, { recursive: true });
 // 1. Bundle
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
 await esbuild.build({
-  entryPoints: [path.join(root, 'src/cli.js')],
+  entryPoints: [path.join(root, 'src/main.js')],
   bundle: true,
   platform: 'node',
   format: 'cjs',
   target: 'node22',
   outfile: path.join(build, 'bundle.cjs'),
-  banner: { js: `// spoken-updater ${pkg.version}` },
-  define: { 'globalThis.__SPOKEN_VERSION__': JSON.stringify(pkg.version) },
+  banner: { js: `// wow-forever-essentals-updater ${pkg.version}` },
+  define: { 'globalThis.__APP_VERSION__': JSON.stringify(pkg.version) },
   logLevel: 'warning',
 });
 

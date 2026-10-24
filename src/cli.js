@@ -1,24 +1,29 @@
-#!/usr/bin/env node
 // @ts-check
-// spoken-updater: install and update the Spoken voiceover addons and voice packs
-// for World of Warcraft: Forever. No arguments = install/update everything.
+// wow-forever-essentals-updater: install and update the essential addons for
+// World of Warcraft: Forever (Spoken, LuzennaForever, NodeSight, Dialogue UI).
+// The entry point is main.js; this file only exports main() so tests can call it.
 import { parseArgs } from 'node:util';
 import * as log from './log.js';
-import { appDirs, loadConfig, githubToken } from './config.js';
-import { GitHubSource } from './sources/github.js';
-import { isLanguageCode } from './catalog.js';
+import { appDirs, loadConfig, githubToken, migrateLegacy } from './config.js';
+import { MultiSource } from './sources/multi.js';
+import { isLanguageCode, GROUPS } from './catalog.js';
 import { trySelfUpdate } from './selfupdate.js';
 import { update, status, detectCmd, clean, UsageError } from './app.js';
+import { runMenu } from './menu.js';
 
 // Stamped in by scripts/build.mjs from package.json (CI sets it to the release version).
-const VERSION = /** @type {any} */ (globalThis).__SPOKEN_VERSION__ ?? 'dev';
+const VERSION = /** @type {any} */ (globalThis).__APP_VERSION__ ?? 'dev';
 
-const HELP = `spoken-updater ${VERSION} - Spoken voiceover addons and voice packs for WoW: Forever
+const HELP = `wow-forever-essentals-updater ${VERSION} - essential addons for WoW: Forever
 
-Usage: spoken-updater [command] [options]
+Usage: wow-forever-essentals-updater [command] [options]
+
+With no command in an interactive terminal, a menu opens: install/update, select addons,
+status, settings. With --yes, or when not interactive, it installs/updates what is selected.
 
 Commands:
-  update                 install or update whatever is needed (default)
+  menu                   open the interactive menu
+  update                 install or update the selected addons
   install --only <ids>   (re)install the named items, comma-separated
   status                 show installed vs latest for every item
   detect                 list the AddOns folders found on this computer
@@ -30,18 +35,22 @@ Options:
   --dry-run         show what update would do, change nothing
   --yes, -y         never ask questions (for shortcuts and scripts)
   --force           install even while WoW is running
-  --no-self-update  don't check GitHub for a newer spoken-updater first
+  --no-self-update  don't check GitHub for a newer wow-forever-essentals-updater first
   --pause-on-exit   wait for Enter (max 30 s) before closing the window
   --verbose, -v     more detail
   --version, --help
 
-Items: spoken, quests-audio, zones-audio, books-audio,
+Addons: ${GROUPS.map((g) => g.title).join(', ')}.
+Items: spoken, quests-audio, zones-audio, books-audio, luzenna-forever, nodesight, dialogueui,
        and quests-audio-<lang>, zones-audio-<lang>, books-audio-<lang> with --lang.
 Config file: ${appDirs().config}${process.platform === 'win32' ? '\\' : '/'}config.json
-GitHub token (optional, for rate limits): SPOKEN_GITHUB_TOKEN or GITHUB_TOKEN.`;
+GitHub token (optional, for rate limits): WFE_GITHUB_TOKEN or GITHUB_TOKEN.`;
 
-/** @param {string[]} argv */
-export async function main(argv) {
+/**
+ * @param {string[]} argv
+ * @param {{ interactive?: boolean, deps?: Partial<import('./app.js').Deps>, io?: import('./tui.js').IO }} [test]  seams for tests
+ */
+export async function main(argv, test = {}) {
   const { values, positionals } = parseArgs({
     args: argv,
     allowPositionals: true,
@@ -63,16 +72,22 @@ export async function main(argv) {
   if (values.version) return log.info(VERSION), 0;
   log.setVerbose(!!values.verbose);
 
-  const cmd = positionals[0] ?? 'update';
   if (positionals.length > 1) throw new UsageError(`unexpected argument: ${positionals[1]}`);
   if (values.lang && !isLanguageCode(values.lang)) throw new UsageError(`--lang must look like frFR or deDE, got "${values.lang}"`);
+  const interactive = test.interactive ?? !!(process.stdin.isTTY && process.stdout.isTTY);
+  // No command: ask the user when there is one to ask; shortcuts and scripts (--yes, no terminal) just update.
+  const cmd = positionals[0] ?? (interactive && !values.yes && !values['dry-run'] ? 'menu' : 'update');
 
-  const dirs = appDirs();
+  const dirs = test.deps?.configDir ? { config: test.deps.configDir, cache: test.deps.cacheDir ?? '' } : appDirs();
+  if (!test.deps?.configDir && migrateLegacy(dirs.config)) {
+    log.info(`Carried your settings over from spoken-updater to ${dirs.config}`);
+  }
   const cfg = loadConfig(dirs.config);
   const deps = {
-    source: new GitHubSource({ token: githubToken(cfg) }),
+    source: new MultiSource({ token: githubToken(cfg) }),
     configDir: dirs.config,
     cacheDir: dirs.cache,
+    ...test.deps,
   };
   const opts = {
     addons: values.addons,
@@ -84,6 +99,10 @@ export async function main(argv) {
   };
 
   switch (cmd) {
+    case 'menu':
+      if (!interactive) throw new UsageError('the menu needs an interactive terminal; use "update" or "status" instead');
+      if (!opts.dryRun && !values['no-self-update']) await trySelfUpdate(VERSION, dirs.cache);
+      return runMenu(opts, deps, test.io);
     case 'update':
       if (opts.only) throw new UsageError('use "install --only <items>" to pick items');
       if (!opts.dryRun && !values['no-self-update']) await trySelfUpdate(VERSION, dirs.cache);
@@ -103,40 +122,3 @@ export async function main(argv) {
   }
 }
 
-/** Keep the console window open briefly (Steam shortcut / double-click). */
-async function pause() {
-  if (!process.stdin.isTTY) {
-    // No keyboard to press Enter on (e.g. a Steam shortcut): just keep the window up.
-    await new Promise((r) => setTimeout(r, 30_000));
-    return;
-  }
-  process.stdout.write('\nPress Enter to close (closes by itself in 30 s)...');
-  await new Promise((resolve) => {
-    const t = setTimeout(resolve, 30_000);
-    process.stdin.once('data', () => (clearTimeout(t), resolve(undefined)));
-    process.stdin.resume();
-  });
-  process.stdin.pause();
-}
-
-// No top-level await: the single-executable build bundles this file as CommonJS.
-async function run() {
-  const argv = process.argv.slice(2);
-  let code;
-  try {
-    code = await main(argv);
-  } catch (e) {
-    if (e instanceof UsageError || /** @type {any} */ (e)?.code === 'ERR_PARSE_ARGS_UNKNOWN_OPTION') {
-      log.error(/** @type {Error} */ (e).message);
-      code = 2;
-    } else {
-      log.error(/** @type {Error} */ (e)?.message ?? String(e));
-      if (argv.includes('--verbose') || argv.includes('-v')) console.error(e);
-      code = 1;
-    }
-  }
-  if (argv.includes('--pause-on-exit')) await pause();
-  process.exitCode = code ?? 0;
-}
-
-run();

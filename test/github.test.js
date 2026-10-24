@@ -70,7 +70,7 @@ test('releases are paginated via the Link header and fetched once', async () => 
 });
 
 test('catalog: English defaults, languages and toggles', () => {
-  const ids = (/** @type {any} */ o) => buildCatalog(o).map((i) => i.id);
+  const ids = (/** @type {any} */ o) => buildCatalog({ selected: ['spoken'], ...o }).map((i) => i.id);
   assert.deepEqual(ids({ language: 'enUS', includeZones: true, includeBooks: true }),
     ['spoken', 'quests-audio', 'zones-audio', 'books-audio']);
   assert.deepEqual(ids({ language: 'frFR', includeZones: false, includeBooks: true }),
@@ -89,4 +89,52 @@ test('a release published without assets falls back to the previous one', async 
   const r = await src.latest({ id: 'spoken', tagPrefix: 'spoken', kind: 'addon', title: '', optional: false });
   assert.equal(r?.version, '3.0.0');
   assert.equal(r?.asset.name, 'Spoken-3.0.0.zip');
+});
+
+// Dialogue UI style: plain tags, rebuilds numbered 1.0.5, 1.0.5-b, ... and one old tag without the "v".
+const DUI = [
+  rel('v1.0.6', ['DialogueUI-1.0.6.zip']),
+  rel('v1.0.5-f', ['DialogueUI-1.0.5-f.zip']),
+  rel('v1.0.5-b', ['DialogueUI-1.0.5-b.zip']),
+  rel('v1.0.5', ['DialogueUI-1.0.5.zip']),
+  rel('0.6.7-g', ['DialogueUI-0.6.7-g.zip']),
+  rel('v1.0.7-rc1', ['DialogueUI-1.0.7-rc1.zip']),
+  rel('nightly', ['x.zip']),
+  rel('v1.0.8', ['DialogueUI-1.0.8.zip'], { prerelease: true }),
+];
+
+test('plain tags: the whole tag is the version, letter suffixes are later builds', () => {
+  const versions = (/** @type {boolean} */ letters) => filterReleases(DUI, null, { plain: true, letters }).map((x) => x.version);
+  assert.deepEqual(versions(true), ['1.0.6', '1.0.5-f', '1.0.5-b', '1.0.5', '0.6.7-g']);
+  // Without the opt-in, "-f" is a prerelease and gets dropped.
+  assert.deepEqual(versions(false), ['1.0.6', '1.0.5']);
+});
+
+test('plain-tag items resolve through their own repo and asset stem', async () => {
+  /** @type {string[]} */
+  const urls = [];
+  /** @type {any} */
+  const fakeFetch = async (/** @type {string} */ url) => {
+    urls.push(url);
+    return new Response(JSON.stringify(DUI), { status: 200 });
+  };
+  const { MultiSource } = await import('../src/sources/multi.js');
+  const src = new MultiSource({ fetchImpl: fakeFetch });
+  const [dui] = buildCatalog({ language: 'enUS', includeZones: true, includeBooks: true, selected: ['dialogueui'] });
+  const r = await src.latest(dui);
+  assert.equal(r?.version, '1.0.6');
+  assert.equal(r?.tag, 'v1.0.6');
+  assert.equal(r?.asset.name, 'DialogueUI-1.0.6.zip');
+  await src.latest(dui);
+  assert.deepEqual(urls, ['https://api.github.com/repos/Peterodox/YUI-Dialogue/releases?per_page=100'], 'one request per repo per run');
+});
+
+test('a failed release fetch is retried on the next call, not cached', async () => {
+  let n = 0;
+  /** @type {any} */
+  const flaky = async () => (++n === 1 ? new Response('down', { status: 500 }) : new Response(JSON.stringify([rel('v1.0.0', ['A-1.0.0.zip'])]), { status: 200 }));
+  const src = new GitHubSource({ repo: 'o/r', fetchImpl: flaky, retry: { retries: 0 } });
+  const item = /** @type {any} */ ({ id: 'a', tagMode: 'plain', assetPrefix: 'A' });
+  await assert.rejects(src.latest(item));
+  assert.equal((await src.latest(item))?.version, '1.0.0');
 });

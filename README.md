@@ -1,36 +1,58 @@
-# spoken-updater
+# wow-forever-essentals-updater
 
-Installs and updates the [Spoken](https://github.com/rusty-key/spoken-wow) voiceover addons and their voice packs for **World of Warcraft: Forever** (1.60.x, Interface 16001), on Windows 10/11 and the Steam Deck.
+Installs and updates the essential addons for **World of Warcraft: Forever** (1.60.x, Interface 16001), on Windows 10/11 and the Steam Deck. Pick the addons you want in a menu, then install or update them in one go.
+
+| Addon | What it is | Source |
+|---|---|---|
+| **Spoken** | voiceover for quests, zones and books (addon plus audio packs, about 2.3 GB) | [rusty-key/spoken-wow](https://github.com/rusty-key/spoken-wow) |
+| **LuzennaForever** | one-bag tweaks, alt inventory tracking, error log | [Luzenna/wowaddon-LuzennaForever](https://github.com/Luzenna/wowaddon-LuzennaForever) |
+| **NodeSight** | herb and ore names on the minimap | [Krelock/NodeSight](https://github.com/Krelock/NodeSight) |
+| **Dialogue UI** | quest and gossip dialogue window | [Peterodox/YUI-Dialogue](https://github.com/Peterodox/YUI-Dialogue) |
 
 It downloads only what changed. If everything is already current, it downloads nothing and changes no files.
 
 ## Use
 
+Run it with no arguments in a terminal and a menu opens:
+
 ```
-spoken-updater                     install or update everything (English)
-spoken-updater status              installed vs latest for every item
-spoken-updater update --dry-run    show what would happen
-spoken-updater install --only quests-audio
-spoken-updater detect              list the AddOns folders found
-spoken-updater clean               prune the download cache
-spoken-updater --lang frFR         also install the French voice packs
+Install / update selected addons
+Select addons
+Status
+Settings
+Exit
 ```
 
-From source (needs Node 22+): `npm install`, then `npm start`. With no arguments, it installs or updates English.
+- **Select addons** is a checkbox list (arrows and Space, `a` for all/none, Enter to confirm, `q` to cancel). Choosing Spoken also asks whether to include the Zones and Books audio. Your choice is saved in the config, and addons you don't select are never touched.
+- **Settings** sets the AddOns folder (when several WoW installs exist) and the Spoken voice language.
+- Without a keyboard-capable terminal the same lists take numbers instead.
 
-**Installed by default:**
+All four addons are selected by default. Commands skip the menu:
+
+```
+wow-forever-essentals-updater                     menu (or, with --yes / no terminal, update)
+wow-forever-essentals-updater update              install or update the selected addons
+wow-forever-essentals-updater status              installed vs latest for every item
+wow-forever-essentals-updater update --dry-run    show what would happen
+wow-forever-essentals-updater install --only nodesight
+wow-forever-essentals-updater detect              list the AddOns folders found
+wow-forever-essentals-updater clean               prune the download cache
+wow-forever-essentals-updater --lang frFR         also install the French Spoken voice packs
+```
+
+From source (needs Node 22+): `npm install`, then `npm start`.
+
+**Spoken items by default:**
 - the Spoken addon: the player plus its Quests, Zones and Books modules (folders `Spoken`, `Spoken_Quests`, `Spoken_Zones`, `Spoken_Books`, `SpokenContributions`)
 - the voice packs Spoken Quests Audio (the "All" bundle), Spoken Zones Audio and Spoken Books Audio
 
-That's about 2.3 GB on first install.
-
-**Item ids:** `spoken`, `quests-audio`, `zones-audio`, `books-audio`. With a language set you also get `quests-audio-<lang>`, `zones-audio-<lang>` and `books-audio-<lang>`.
+**Item ids** (for `--only`): `spoken`, `quests-audio`, `zones-audio`, `books-audio`, `luzenna-forever`, `nodesight`, `dialogueui`. With a language set you also get `quests-audio-<lang>`, `zones-audio-<lang>` and `books-audio-<lang>`. `--only` can name an item you haven't selected.
 
 **Flags:**
 - `--addons <path>`: use this AddOns folder.
-- `--yes`: never prompt.
+- `--yes`: never prompt (and skip the menu).
 - `--force`: install even while WoW is running.
-- `--no-self-update`: skip the check for a newer spoken-updater. Normally `update` and `install` first look at this tool's GitHub releases and, if a newer one exists, download it (sha256-checked, and test-run before use) and replace the executable; the new version takes effect on the next run. If anything fails it only prints a warning and carries on.
+- `--no-self-update`: skip the check for a newer version of this tool. Normally `update`, `install` and the menu first look at this tool's GitHub releases and, if a newer one exists, download it (sha256-checked, and test-run before use) and replace the executable; the new version takes effect on the next run. If anything fails it only prints a warning and carries on.
 - `--pause-on-exit`: keep the window open at the end.
 - `--verbose`: print more detail.
 
@@ -38,9 +60,9 @@ That's about 2.3 GB on first install.
 
 ### Steam Deck
 
-1. Switch to Desktop Mode and copy `spoken-updater-linux-x64` to your home folder, e.g. `~/spoken-updater`.
-2. Run `chmod +x ~/spoken-updater` in Konsole, then `~/spoken-updater`.
-3. Optional: in Steam, choose *Add a Non-Steam Game*, pick the file, and set its launch options to `--yes --pause-on-exit`.
+1. Switch to Desktop Mode and copy `wow-forever-essentals-updater-linux-x64` to your home folder, e.g. `~/wfe-updater`.
+2. Run `chmod +x ~/wfe-updater` in Konsole, then `~/wfe-updater`.
+3. Optional: in Steam, choose *Add a Non-Steam Game*, pick the file, and set its launch options to `--yes --pause-on-exit` (this installs or updates what you selected, with no menu).
 
 The tool searches for your WoW install under:
 - Proton prefixes, in `~/.local/share/Steam/steamapps/compatdata` and Steam libraries on the SD card under `/run/media`
@@ -48,12 +70,14 @@ The tool searches for your WoW install under:
 
 ### Windows
 
-Run `spoken-updater.exe` in a terminal, or double-click it. The tool finds WoW through Battle.net's `product.db`, the Battle.net config, the registry, and the common install folders.
+Run `wow-forever-essentals-updater.exe` in a terminal, or double-click it. The tool finds WoW through Battle.net's `product.db`, the Battle.net config, the registry, and the common install folders.
 
 ## Config
 
-- **Windows:** `%APPDATA%\spoken-updater\config.json`. The cache is in `%LOCALAPPDATA%\spoken-updater\cache`.
-- **Linux:** `~/.config/spoken-updater/config.json`. The cache is in `~/.cache/spoken-updater`.
+- **Windows:** `%APPDATA%\wow-forever-essentals-updater\config.json`. The cache is in `%LOCALAPPDATA%\wow-forever-essentals-updater\cache`.
+- **Linux:** `~/.config/wow-forever-essentals-updater/config.json`. The cache is in `~/.cache/wow-forever-essentals-updater`.
+
+The first run copies `config.json` and `state.json` from the old `spoken-updater` folder, if there is one, so nothing needs redoing.
 
 ```json
 {
@@ -63,22 +87,29 @@ Run `spoken-updater.exe` in a terminal, or double-click it. The tool finds WoW t
   "include_zones": true,
   "include_books": true,
   "github_token": "",
-  "keep_downloads": false
+  "keep_downloads": false,
+  "selected": ["spoken", "luzenna-forever", "nodesight", "dialogueui"]
 }
 ```
 
+- `selected`: the addons to install and keep updated. The menu edits this.
 - `addons_path`: overrides detection. When several installs are found, the tool asks once and saves your choice here.
 - `client_folder`: the Forever client folder. Change it if Blizzard renames the folder at launch. Clients that report game version 1.60.x are detected regardless of folder name.
-- `github_token`: optional, only needed if you hit GitHub's rate limit of 60 requests an hour. Takes `SPOKEN_GITHUB_TOKEN` or `GITHUB_TOKEN` from the environment too.
+- `include_zones` / `include_books`: the Spoken Zones and Books modules and their voice packs.
+- `github_token`: optional, only needed if you hit GitHub's rate limit of 60 requests an hour (one request per addon repo per run). Takes `WFE_GITHUB_TOKEN` or `GITHUB_TOKEN` from the environment too (`SPOKEN_GITHUB_TOKEN` still works).
 - `keep_downloads`: keep zips after a successful install. By default they are deleted to save space, but kept after a failure so a retry doesn't download them again.
 
 `state.json`, next to the config, records what was installed. Each folder's `.toc` is the source of truth. An item is reinstalled if:
 - its folder or `.toc` disappears, or
 - its file count or size changes by more than 10%.
 
+An addon you installed by hand is recognised by its folder name and updated in place.
+
 ## Where things come from
 
-Everything comes from [GitHub Releases](https://github.com/rusty-key/spoken-wow/releases). One tag prefix maps to each item:
+Everything comes from GitHub Releases, one repo per addon.
+
+**Spoken** uses one tag prefix per item:
 
 | Item | Tag prefix |
 |---|---|
@@ -88,12 +119,14 @@ Everything comes from [GitHub Releases](https://github.com/rusty-key/spoken-wow/
 | `books-audio` | `books-audio/` |
 | language packs | e.g. `quests-audio-frFR/` |
 
+**LuzennaForever, NodeSight and Dialogue UI** use plain tags (`v1.4.1`) and one zip each (`NodeSight-1.4.1.zip`). Dialogue UI also publishes rebuilds as `v1.0.5-b`, `v1.0.5-c` ...; those count as later builds of 1.0.5, not as prereleases.
+
 **How the version and file are chosen:**
 - The newest stable version is picked by semver.
 - The multi-flavor zip is used, not the `-WoW_1.12`-style legacy builds.
 - Each download is checked against GitHub's sha256 digest.
 
-**Not offered:**
+**Not offered (Spoken):**
 - The old faction-split quest packs stopped at v2.0.0 and don't support Forever.
 - There is no 64 kbps zones pack.
 
@@ -102,8 +135,7 @@ addon. The old 2.x folders (`SpokenPlayer`, `SpokenQuests`, `SpokenZones`, `Spok
 retired, and the `quests/`, `zones/` and `books/` tags are no longer used. Installing 3.x
 removes those old folders in the same transaction; otherwise both generations would load and
 every line would be voiced twice. Upstream's empty placeholder folders (e.g. the new
-`SpokenPlayer`, "now Spoken") are never installed. `include_zones` / `include_books` switch
-the `Spoken_Zones` / `Spoken_Books` module folders and their voice packs.
+`SpokenPlayer`, "now Spoken") are never installed.
 
 Sources plug in through `src/sources/source.js`. A Wago source is possible, but Wago's API needs a personal API key.
 
@@ -112,26 +144,29 @@ Sources plug in through `src/sources/source.js`. A Wago source is possible, but 
 1. **WoW must be closed.** The tool refuses to run while `Wow*.exe` is running, including under Wine/Proton, unless you pass `--force`.
 2. **Disk space is checked first**, for both the download cache and the AddOns drive.
 3. **Downloads resume and retry.** They resume with HTTP Range and retry with backoff.
-4. **Zips are unpacked into `Interface/.spoken-updater`**, on the same drive as AddOns. Paths are normalised (backslashes, wrapper folders, double nesting) and unsafe paths are refused.
-5. **Only folders named `Spoken*` are written.** Other addons and `WTF/` are never touched. The upstream zips also contain `VoiceOverRedux` and `ZoneLore`. These are empty placeholders named after the addons' old names, only useful for carrying over settings from those old addons, so they are not installed.
-6. **Folders are swapped in by renaming.** Old folders move to a backup and new ones move in. If anything fails, everything is moved back. A journal lets the next run finish or undo a swap that was interrupted by a crash.
+4. **Zips are unpacked into `Interface/.wow-forever-essentals-updater`**, on the same drive as AddOns. Paths are normalised (backslashes, wrapper folders, double nesting) and unsafe paths are refused.
+5. **Each addon only writes its own folders.** Spoken writes folders named `Spoken*`; LuzennaForever, NodeSight and Dialogue UI write `LuzennaForever`, `NodeSight` and `DialogueUI`. Everything else in the zip is ignored, and other addons and `WTF/` are never touched. The Spoken zips also contain `VoiceOverRedux` and `ZoneLore`. These are empty placeholders named after the addons' old names, only useful for carrying over settings from those old addons, so they are not installed.
+6. **Folders are swapped in by renaming.** Old folders move to a backup and new ones move in. If anything fails, everything is moved back. A journal lets the next run finish or undo a swap that was interrupted by a crash (including one left by the old `spoken-updater` name).
 
 ## Development
 
 ```
 npm test           # node:test, no network, fake zips and fake WoW/Steam Deck trees
-npm run build      # dist/spoken-updater.exe and dist/spoken-updater-linux-x64
+npm run build      # dist/wow-forever-essentals-updater.exe and dist/wow-forever-essentals-updater-linux-x64
 make               # same, via make
 ```
 
 The build bundles `src/` with esbuild into a Node [single executable application](https://nodejs.org/api/single-executable-applications.html). It downloads the official Node binaries for each platform, checks them against nodejs.org's SHASUMS256, and injects the bundle. Both targets build from Windows or Linux. Each binary is about 85–120 MB because it contains Node.
+
+To add an addon, add a group in `src/catalog.js` (`GROUPS` and `buildCatalog`); a single-folder addon released on plain tags is one `plainAddon(...)` call.
 
 ## Releases
 
 Every push to `main` that touches `src/`, `scripts/` or `package*.json` is released by
 `.github/workflows/release.yml`. It runs the tests on Ubuntu and Windows, builds both
 executables, smoke-tests each on its own OS, and publishes a GitHub release with
-`SHA256SUMS.txt`.
+`SHA256SUMS.txt`. Copies of both executables are also published under the old `spoken-updater` names so
+installs of the old tool keep self-updating.
 
 The version comes from the latest `vX.Y.Z` tag, bumped by the subject lines of the pushed commits:
 

@@ -4,12 +4,14 @@
 // next run finish or undo a swap interrupted by a crash or power loss.
 //
 // Work dir layout (next to the real AddOns dir, on the same filesystem, so renames are atomic):
-//   Interface/.spoken-updater/journal.json
-//   Interface/.spoken-updater/bak-<id>/<Folder>
-//   Interface/.spoken-updater/staging-<id>/...
+//   Interface/.wow-forever-essentals-updater/journal.json
+//   Interface/.wow-forever-essentals-updater/bak-<id>/<Folder>
+//   Interface/.wow-forever-essentals-updater/staging-<id>/...
 import fs from 'node:fs';
 import path from 'node:path';
 import { findChild } from './detect/fold.js';
+
+const WORK_DIR = '.wow-forever-essentals-updater';
 
 /**
  * @typedef {{ kind: 'backup' | 'install', from: string, to: string }} Move
@@ -18,7 +20,7 @@ import { findChild } from './detect/fold.js';
  */
 
 /**
- * Interface/.spoken-updater for an AddOns folder. AddOns may be a symlink or
+ * Interface/.wow-forever-essentals-updater for an AddOns folder. AddOns may be a symlink or
  * junction to another drive (a common way to save space on the Deck), so the
  * work dir sits next to its real location to keep renames on one filesystem.
  * @param {string} addons
@@ -28,7 +30,12 @@ export function workDirFor(addons) {
   try {
     real = fs.realpathSync(real);
   } catch { /* not created yet */ }
-  return path.join(path.dirname(real), '.spoken-updater');
+  return path.join(path.dirname(real), WORK_DIR);
+}
+
+/** The work dir of spoken-updater, this tool's earlier name; an interrupted install may still be waiting there. @param {string} addons */
+export function legacyWorkDirFor(addons) {
+  return path.join(path.dirname(workDirFor(addons)), '.spoken-updater');
 }
 
 /** @param {number} ms */
@@ -158,7 +165,7 @@ export function recover(workDir, rename = renameRetry) {
     j = JSON.parse(fs.readFileSync(f, 'utf8'));
     if (!Array.isArray(j.moves)) throw new Error('no moves');
   } catch {
-    throw new Error(`${f} is damaged. Check that your Spoken folders in AddOns look right ` +
+    throw new Error(`${f} is damaged. Check that your addon folders in AddOns look right ` +
       `(originals may be in ${workDir}), then delete ${f} and run again.`);
   }
   let msg;

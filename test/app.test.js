@@ -66,7 +66,7 @@ async function world(versions) {
   writeTree(addons, { 'Details/Details.toc': toc('1.0.0'), 'Details/Details.lua': 'keep me' });
   writeTree(path.join(home, 'wow', '_classic_beta_', 'WTF'), { 'Account/X/SavedVariables/Spoken.lua': 'settings' });
   const configDir = path.join(home, 'config');
-  saveConfig(configDir, { ...DEFAULT_CONFIG, include_zones: false, include_books: false, addons_path: addons });
+  saveConfig(configDir, { ...DEFAULT_CONFIG, selected: ['spoken'], include_zones: false, include_books: false, addons_path: addons });
   const up = upstream(versions);
   const srv = await serve(up.files);
   const source = fakeSource(versions, srv.url, up);
@@ -85,7 +85,7 @@ test('fresh install, then a second run is a strict no-op', async () => {
       'SpokenQuestsAudioGossip', 'SpokenQuestsAudioHorde', 'SpokenQuestsAudioShared', 'Spoken_Quests'],
       'no SpokenPlayer placeholder, no switched-off Spoken_Zones/Spoken_Books');
     assert.equal(fs.readFileSync(path.join(w.addons, 'Details/Details.lua'), 'utf8'), 'keep me');
-    assert.ok(!fs.existsSync(path.join(w.addons, '..', '.spoken-updater')), 'work dir cleaned up');
+    assert.ok(!fs.existsSync(path.join(w.addons, '..', '.wow-forever-essentals-updater')), 'work dir cleaned up');
     assert.ok(!fs.existsSync(path.join(w.deps.cacheDir, 'downloads', 'spoken')), 'zips removed after success');
 
     const requestsBefore = w.srv.stats.requests;
@@ -318,13 +318,13 @@ test('a second instance is refused while the first holds the lock', async () => 
   const w = await world(V1);
   try {
     // Another live process (this one's parent stands in for it) holds the lock.
-    fs.writeFileSync(path.join(w.configDir, 'spoken-updater.lock'), String(process.ppid));
+    fs.writeFileSync(path.join(w.configDir, 'wow-forever-essentals-updater.lock'), String(process.ppid));
     await assert.rejects(update({ yes: true }, w.deps), /already running/);
     assert.equal(w.srv.stats.requests, 0);
     // A lock from a dead process is taken over.
-    fs.writeFileSync(path.join(w.configDir, 'spoken-updater.lock'), '999999');
+    fs.writeFileSync(path.join(w.configDir, 'wow-forever-essentals-updater.lock'), '999999');
     assert.equal(await update({ yes: true }, w.deps), 0);
-    assert.ok(!fs.existsSync(path.join(w.configDir, 'spoken-updater.lock')), 'lock released');
+    assert.ok(!fs.existsSync(path.join(w.configDir, 'wow-forever-essentals-updater.lock')), 'lock released');
   } finally {
     await w.srv.close();
   }
@@ -335,7 +335,7 @@ test('dry run with an interrupted install pending changes nothing; a real run re
   try {
     await update({ yes: true }, w.deps);
     // Simulate a crash mid-swap of Spoken: original moved to backup, journal left behind.
-    const work = path.join(w.addons, '..', '.spoken-updater');
+    const work = path.join(w.addons, '..', '.wow-forever-essentals-updater');
     const bak = path.join(work, 'bak-1');
     fs.mkdirSync(bak, { recursive: true });
     fs.renameSync(path.join(w.addons, 'Spoken'), path.join(bak, 'Spoken'));

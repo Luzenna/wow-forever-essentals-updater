@@ -14,7 +14,7 @@ const fatal = (msg) => Object.assign(new Error(String(msg)), { fatal: true });
 /** Cache location: <cache>/downloads/<tag prefix>/<version>/<digest>/<asset>. @param {string} cacheDir @param {import('./catalog.js').Item} item @param {import('./sources/source.js').Release} rel */
 export function cachePath(cacheDir, item, rel) {
   const id = rel.asset.sha256 ? rel.asset.sha256.slice(0, 16) : `size-${rel.asset.size}`;
-  return path.join(cacheDir, 'downloads', item.tagPrefix, rel.version, id, rel.asset.name);
+  return path.join(cacheDir, 'downloads', item.cacheKey ?? item.tagPrefix ?? item.id, rel.version, id, rel.asset.name);
 }
 
 /** sha256 of a file, hex. @param {string} file @returns {Promise<string>} */

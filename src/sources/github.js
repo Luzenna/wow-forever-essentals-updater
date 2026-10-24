@@ -4,8 +4,6 @@
 import * as semver from '../semver.js';
 import { HttpError, USER_AGENT, withRetry } from '../http.js';
 
-export const DEFAULT_REPO = 'rusty-key/spoken-wow';
-
 /**
  * @typedef {{ name: string, size: number, browser_download_url: string, digest?: string | null, state?: string }} GhAsset
  * @typedef {{ tag_name: string, draft: boolean, prerelease: boolean, assets: GhAsset[] }} GhRelease
@@ -34,17 +32,20 @@ export function pickAsset(assets, prefix, version) {
 }
 
 /**
- * Releases for one tag prefix, newest first by semver. Drafts, prereleases and
- * tags whose suffix isn't a version are dropped.
- * @param {GhRelease[]} releases @param {string} prefix
+ * Releases for one tag prefix (or, with `plain`, every release whose whole tag is a
+ * version), newest first by semver. Drafts, prereleases and tags that aren't a
+ * version are dropped. `letters` reads 1.0.5-f as a later build of 1.0.5.
+ * @param {GhRelease[]} releases @param {string | null} prefix
+ * @param {{ plain?: boolean, letters?: boolean }} [mode]
  */
-export function filterReleases(releases, prefix) {
-  const want = prefix + '/';
+export function filterReleases(releases, prefix, mode = {}) {
+  const want = mode.plain ? '' : prefix + '/';
+  const o = { letters: !!mode.letters };
   return releases
     .filter((r) => !r.draft && !r.prerelease && r.tag_name.startsWith(want))
-    .map((r) => ({ r, version: semver.clean(r.tag_name.slice(want.length)) }))
-    .filter((x) => x.version !== null && !semver.parse(x.version)?.pre.length)
-    .sort((a, b) => semver.compare(/** @type {string} */ (b.version), /** @type {string} */ (a.version)));
+    .map((r) => ({ r, version: semver.clean(r.tag_name.slice(want.length), o) }))
+    .filter((x) => x.version !== null && !semver.parse(x.version, o)?.pre.length)
+    .sort((a, b) => semver.compare(/** @type {string} */ (b.version), /** @type {string} */ (a.version), o));
 }
 
 /** @param {string | null} link */
@@ -60,7 +61,7 @@ export class GitHubSource {
    * @param {{ repo?: string, token?: string | null, apiBase?: string, fetchImpl?: typeof fetch, retry?: Parameters<typeof withRetry>[1] }} [opts]
    */
   constructor(opts = {}) {
-    this.repo = opts.repo ?? DEFAULT_REPO;
+    this.repo = opts.repo ?? '';
     this.token = opts.token ?? null;
     this.apiBase = opts.apiBase ?? 'https://api.github.com';
     this.fetch = opts.fetchImpl ?? fetch;
@@ -71,7 +72,11 @@ export class GitHubSource {
 
   /** @returns {Promise<GhRelease[]>} */
   releases() {
-    this.cache ??= this.#fetchAll();
+    // A failure must not stick: the menu keeps this source for the whole session.
+    this.cache ??= this.#fetchAll().catch((e) => {
+      this.cache = null;
+      throw e;
+    });
     return this.cache;
   }
 
@@ -91,7 +96,7 @@ export class GitHubSource {
         if (!r.ok) {
           if (r.status === 403 && r.headers.get('x-ratelimit-remaining') === '0' && !this.token) {
             throw Object.assign(new HttpError(page, r.status, r.headers), {
-              message: 'GitHub API rate limit reached. Set SPOKEN_GITHUB_TOKEN (or github_token in config) and try again.',
+              message: 'GitHub API rate limit reached. Set WFE_GITHUB_TOKEN (or github_token in config) and try again.',
             });
           }
           throw new HttpError(page, r.status, r.headers);
@@ -106,14 +111,15 @@ export class GitHubSource {
 
   /** @param {import('../catalog.js').Item} item @returns {Promise<import('./source.js').Release | null>} */
   async latest(item) {
-    const releases = filterReleases(await this.releases(), item.tagPrefix);
+    const releases = filterReleases(await this.releases(), item.tagPrefix ?? null, { plain: item.tagMode === 'plain', letters: item.letterSuffix });
     if (!releases.length) return null;
+    const stem = item.assetPrefix ?? item.tagPrefix;
     // A release can be published without assets (spoken/v3.0.1 was); fall back
     // to the newest one that has a usable zip.
     const top = releases.find((x) => usableZips(x.r.assets).length);
-    if (!top) pickAsset(releases[0].r.assets, item.tagPrefix, releases[0].version); // throws a clear error
+    if (!top) pickAsset(releases[0].r.assets, stem, releases[0].version); // throws a clear error
     const t = /** @type {typeof releases[number]} */ (top);
-    const a = pickAsset(t.r.assets, item.tagPrefix, /** @type {string} */ (t.version));
+    const a = pickAsset(t.r.assets, stem, /** @type {string} */ (t.version));
     const digest = a.digest && /^sha256:([0-9a-f]{64})$/i.exec(a.digest);
     return {
       version: /** @type {string} */ (t.version),

@@ -1,17 +1,17 @@
 {
-  "name": "spoken-updater",
+  "name": "wow-forever-essentals-updater",
   "version": "0.1.0",
-  "description": "Install and update the Spoken voiceover addons and voice packs for WoW: Forever",
+  "description": "Install and update the essential addons for WoW: Forever (Spoken, LuzennaForever, NodeSight, Dialogue UI)",
   "type": "module",
   "private": true,
   "bin": {
-    "spoken-updater": "src/cli.js"
+    "wow-forever-essentals-updater": "src/main.js"
   },
   "engines": {
     "node": ">=22"
   },
   "scripts": {
-    "start": "node src/cli.js",
+    "start": "node src/main.js",
     "test": "node --test \"test/*.test.js\"",
     "build": "node scripts/build.mjs"
   },

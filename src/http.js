@@ -10,7 +10,7 @@ export class HttpError extends Error {
   }
 }
 
-export const USER_AGENT = 'spoken-updater (+https://github.com/rusty-key/spoken-wow)';
+export const USER_AGENT = 'wow-forever-essentals-updater (+https://github.com/Luzenna/wow-forever-essentals-updater)';
 
 /** @param {number} ms */
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
