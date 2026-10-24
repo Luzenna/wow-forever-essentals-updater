@@ -102,7 +102,7 @@ export async function main(argv, test = {}) {
     case 'menu':
       if (!interactive) throw new UsageError('the menu needs an interactive terminal; use "update" or "status" instead');
       if (!opts.dryRun && !values['no-self-update']) await trySelfUpdate(VERSION, dirs.cache);
-      return runMenu(opts, deps, test.io);
+      return runMenu(opts, deps, test.io, VERSION === 'dev' ? '' : VERSION);
     case 'update':
       if (opts.only) throw new UsageError('use "install --only <items>" to pick items');
       if (!opts.dryRun && !values['no-self-update']) await trySelfUpdate(VERSION, dirs.cache);

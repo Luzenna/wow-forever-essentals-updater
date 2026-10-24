@@ -96,7 +96,7 @@ function spokenItems(opts) {
   if (!opts.includeBooks) exclude.push('spoken_books');
   /** @type {Item[]} */
   const items = [{
-    ...spokenPack('spoken', 'Spoken (player, Quests, Zones, Books)', 'addon'),
+    ...spokenPack('spoken', 'Spoken addon', 'addon'),
     exclude, replaces: { items: RETIRED_ITEMS, folders: RETIRED_FOLDERS },
   }];
 

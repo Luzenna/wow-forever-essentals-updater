@@ -18,6 +18,7 @@ import { swapIn, recover, workDirFor, legacyWorkDirFor, pendingJournal, removeLe
 import { acquireLock, legacyInstanceRunning } from './lock.js';
 import { createProgress } from './progress.js';
 import { freeBytes, deviceOf, runningWow } from './platform.js';
+import { colorOn, paint, pad, sym, vlen } from './ui.js';
 
 export class UsageError extends Error {}
 
@@ -270,18 +271,19 @@ function checkSpace(plans, addons, cacheDir, keepDownloads) {
  */
 async function installItem(plan, addons, deps, cfg, state) {
   const rel = /** @type {import('./sources/source.js').Release} */ (plan.release);
-  const tag = `[${plan.item.id}]`;
+  const L = log.scoped(plan.item.id, plan.item.title);
+  L.head(`${plan.reason}`);
   const zip = cachePath(deps.cacheDir, plan.item, rel);
   const left = remainingBytes(zip, rel.asset.size);
-  log.info(`${tag} ${plan.reason}: ${left ? `downloading ${log.bytes(left)}` : 'using cached download'} (${rel.asset.name})`);
+  L.info(`${colorOn() ? '' : plan.reason + ': '}${left ? `downloading ${log.bytes(left)}` : 'using cached download'} (${rel.asset.name})`);
   const bar = createProgress(plan.item.id, rel.asset.size, { tty: deps.tty });
   const got = await download(rel.asset, zip, {
     fetchImpl: deps.fetchImpl,
     onProgress: left ? (n) => bar.update(n) : undefined,
-    onRetry: (e, n) => log.warn(`${tag} download problem (${/** @type {Error} */ (e).message}), retry ${n}`),
+    onRetry: (e, n) => L.warn(`download problem (${/** @type {Error} */ (e).message}), retry ${n}`),
   });
   if (left && !got.cached) bar.finish(rel.asset.size);
-  log.debug(`${tag} verified ${rel.asset.sha256 ? 'sha256 ' + rel.asset.sha256.slice(0, 12) : 'size only (no digest published)'}`);
+  L.debug(`verified ${rel.asset.sha256 ? 'sha256 ' + rel.asset.sha256.slice(0, 12) : 'size only (no digest published)'}`);
 
   const workDir = workDirFor(addons);
   const unpacked = await uncompressedSize(zip);
@@ -289,7 +291,7 @@ async function installItem(plan, addons, deps, cfg, state) {
   const staging = path.join(workDir, `staging-${process.pid}-${Date.now()}`);
   fs.mkdirSync(staging, { recursive: true });
   try {
-    log.info(`${tag} unpacking ${log.bytes(unpacked)}`);
+    L.info(`unpacking ${log.bytes(unpacked)}`);
     await extractZip(zip, staging);
     const roots = findAddonRoots(staging);
     const excluded = new Set(plan.item.exclude ?? []);
@@ -298,13 +300,13 @@ async function installItem(plan, addons, deps, cfg, state) {
       if (!plan.item.owns(r.name)) why = `not a folder of ${plan.item.id}`;
       else if (plan.item.placeholders && isPlaceholder(r.dir)) why = 'an empty placeholder for a retired folder';
       else if (excluded.has(r.name.toLowerCase())) why = 'switched off in the config';
-      if (why) log.debug(`${tag} not installing ${r.name} (${why})`);
+      if (why) L.debug(`not installing ${r.name} (${why})`);
       return !why;
     });
     if (!keep.length) throw new Error(`the zip contains no ${plan.item.title} addon folders`);
     for (const r of keep) {
       if (!folderSupports(r.dir, FOREVER_INTERFACE)) {
-        log.warn(`${tag} ${r.name}: no .toc lists Interface ${FOREVER_INTERFACE}; the Forever client may mark it incompatible`);
+        L.warn(`${r.name}: no .toc lists Interface ${FOREVER_INTERFACE}; the Forever client may mark it incompatible`);
       }
     }
     /** @type {Record<string, import('./config.js').FolderState>} */
@@ -322,20 +324,20 @@ async function installItem(plan, addons, deps, cfg, state) {
       ...(plan.item.replaces?.items ?? []).flatMap((id) => Object.keys(mine[id]?.folders ?? {})),
       ...(plan.item.replaces?.folders ?? []),
     ])].filter((n) => plan.item.owns(n) &&!keepNames.has(n.toLowerCase()) && findChild(addons, n, { dirsOnly: true }));
-    for (const n of remove) log.info(`${tag} removing old folder ${n}`);
+    for (const n of remove) L.info(`removing old folder ${n}`);
 
     swapIn({ addons, roots: keep, remove, workDir });
     for (const id of plan.item.replaces?.items ?? []) delete mine[id];
 
     const tocVersion = Object.values(folders).find((f) => f.tocVersion === rel.version)?.tocVersion;
-    if (!tocVersion) log.warn(`${tag} no .toc reports version ${rel.version}; tracking by release tag ${rel.tag}`);
+    if (!tocVersion) L.warn(`no .toc reports version ${rel.version}; tracking by release tag ${rel.tag}`);
     state.installs[key] = mine;
     state.installs[key][plan.item.id] = {
       tag: rel.tag, version: rel.version, asset: rel.asset.name, sha256: rel.asset.sha256, exclude: plan.item.exclude ?? [],
       installedAt: new Date().toISOString(), folders,
     };
     saveState(deps.configDir, state);
-    log.info(`${tag} installed ${rel.version}: ${keep.map((r) => r.name).join(', ')}`);
+    L.ok(`installed ${rel.version}: ${keep.map((r) => r.name).join(', ')}`);
   } finally {
     fs.rmSync(staging, { recursive: true, force: true });
     try {
@@ -410,12 +412,12 @@ export async function update(opts, deps) {
 
   const report = () => {
     for (const p of plans) {
-      const id = `[${p.item.id}]`;
-      if (p.status === 'error') log.error(`${id} ${p.reason}`);
-      else if (p.status === 'unavailable' && p.item.optional) log.info(`${id} ${describe(p)}`);
-      else if (p.status === 'unavailable') log.warn(`${id} ${describe(p)}`);
-      else if (!p.act && p.status === 'current') log.info(`${id} ${p.installed ?? ''} ${p.reason || 'up to date'}`);
-      else if (!p.act) log.info(`${id} not selected (${p.reason})`);
+      const L = log.scoped(p.item.id, p.item.title);
+      if (p.status === 'error') L.row('fail', p.reason);
+      else if (p.status === 'unavailable' && p.item.optional) L.row('skip', describe(p));
+      else if (p.status === 'unavailable') L.row('warn', describe(p));
+      else if (!p.act && p.status === 'current') L.row('ok', `${p.installed ?? ''} ${p.reason || 'up to date'}`.trim());
+      else if (!p.act) L.row('skip', `not selected (${p.reason})`);
     }
   };
   const errored = () => plans.filter((p) => p.status === 'error' || (p.status === 'unavailable' && !p.item.optional));
@@ -485,9 +487,20 @@ export async function update(opts, deps) {
     }
     const current = plans.filter((p) => !p.act && p.status === 'current').length;
     const skipped = plans.length - todo.length - current - errored().length;
-    log.info(`\nUpdated: ${updated.length}  Up to date: ${current}${skipped ? `  Skipped: ${skipped}` : ''}  Failed: ${failed.length}  Downloaded: ${log.bytes(downloaded)}`);
-    if (updated.length) log.info(`  updated: ${updated.join(', ')}`);
-    if (failed.length) log.info(`  failed:  ${failed.join(', ')} (run again to retry; finished downloads are reused)`);
+    if (colorOn()) {
+      const titleOf = (/** @type {string} */ id) => plans.find((p) => p.item.id === id)?.item.title ?? id;
+      log.info('');
+      if (!failed.length) {
+        log.info(`${paint(['bold', 'green'], `${sym().ok} All done!`)} ${paint('dim', `${updated.length} updated, ${current} already up to date, ${log.bytes(downloaded)} downloaded`)}`);
+      } else {
+        log.info(`${paint(['bold', 'red'], `${sym().fail} Finished with problems:`)} ${updated.length} updated, ${failed.length} failed`);
+        log.info(`  ${paint('red', failed.map(titleOf).join(', '))} ${paint('dim', "didn't install. Run again to retry; finished downloads are reused.")}`);
+      }
+    } else {
+      log.info(`\nUpdated: ${updated.length}  Up to date: ${current}${skipped ? `  Skipped: ${skipped}` : ''}  Failed: ${failed.length}  Downloaded: ${log.bytes(downloaded)}`);
+      if (updated.length) log.info(`  updated: ${updated.join(', ')}`);
+      if (failed.length) log.info(`  failed:  ${failed.join(', ')} (run again to retry; finished downloads are reused)`);
+    }
     return failed.length ? 1 : 0;
   } finally {
     release();
@@ -497,26 +510,31 @@ export async function update(opts, deps) {
 /** @param {Options} opts @param {Deps} deps */
 export async function status(opts, deps) {
   const { cfg, addons, plans } = await makePlan(opts, deps);
-  log.info(`AddOns folder: ${addons}\n`);
-  const rows = [['ITEM', 'INSTALLED', 'LATEST', 'STATUS', 'ON DISK', 'DOWNLOAD', 'SOURCE']];
+  log.info(`${paint('dim', 'AddOns folder:')} ${addons}\n`);
+  /** @type {Record<string, [string, string]>} */
+  const words = {
+    outdated: ['update available', 'yellow'], 'not-installed': ['not installed', 'yellow'], missing: ['folder missing', 'yellow'],
+    broken: ['needs repair', 'yellow'], error: ['error', 'red'], unavailable: ['n/a', 'dim'],
+  };
+  const rows = [['ADDON', 'INSTALLED', 'LATEST', 'STATUS', 'DOWNLOAD', 'ID'].map((h) => paint(['bold', 'dim'], h))];
   for (const p of plans) {
+    const [word, tint] = p.status === 'current' ? (p.reason ? ['newer than release', 'dim'] : ['up to date', 'green']) : words[p.status] ?? [p.status, 'dim'];
     rows.push([
-      p.item.id,
+      paint('bold', p.item.title),
       p.installed ?? '-',
       p.release?.version ?? '-',
-      p.status === 'current' ? (p.reason ? 'newer' : 'current') : p.status === 'unavailable' ? 'n/a' : p.status,
-      p.diskBytes ? log.bytes(p.diskBytes) : '-',
-      p.release ? log.bytes(p.release.asset.size) : '-',
-      p.release?.source ?? '-',
+      paint(tint, word),
+      p.release && p.act && p.status !== 'current' ? log.bytes(p.release.asset.size) : '-',
+      paint('dim', p.item.id),
     ]);
   }
-  const w = rows[0].map((_, c) => Math.max(...rows.map((r) => r[c].length)));
-  for (const r of rows) log.info(r.map((cell, c) => cell.padEnd(w[c])).join('  ').trimEnd());
+  const w = rows[0].map((_, c) => Math.max(...rows.map((r) => vlen(r[c]))));
+  for (const r of rows) log.info('  ' + r.map((cell, c) => pad(cell, w[c])).join('   ').trimEnd());
   const off = GROUPS.filter((g) => !opts.only?.length && !cfg.selected.includes(g.id));
   if (off.length) log.info(`\nNot selected (left alone): ${off.map((g) => g.title).join(', ')}`);
   // Not p.act: with --only that is set for every named item, installed or not.
   const pending = plans.filter((p) => p.act && p.status !== 'current');
-  log.info(pending.length ? `\n${pending.length} item(s) need installing or updating. Run without arguments to update.` : '\nEverything is up to date.');
+  log.info(pending.length ? `\n${pending.length} item(s) need installing or updating. Run without arguments to update.` : `\n${paint('green', sym().ok)} Everything is up to date.`);
   return 0;
 }
 

@@ -2,6 +2,7 @@
 // Download progress: an ASCII bar redrawn in place on a terminal, or a line every
 // 10% when output is redirected (e.g. launched from a Steam shortcut with a log).
 import { bytes } from './log.js';
+import { colorOn, paint, sym } from './ui.js';
 
 /**
  * @param {string} label @param {number} total
@@ -23,6 +24,10 @@ export function createProgress(label, total, opts = {}) {
     const fill = Math.round((pct / 100) * width);
     const secs = Math.max(0.001, (now() - start) / 1000);
     const rate = (done - Math.max(0, startBytes)) / secs;
+    if (colorOn()) {
+      const s = sym();
+      return `  ${paint('green', s.bar.repeat(fill))}${paint('dim', s.barOff.repeat(width - fill))} ${paint('bold', String(pct).padStart(3) + '%')}  ${bytes(done)} / ${bytes(total)}  ${paint('dim', bytes(Math.round(rate)) + '/s')}`;
+    }
     return `  [${'#'.repeat(fill)}${'-'.repeat(width - fill)}] ${String(pct).padStart(3)}%  ${bytes(done)} / ${bytes(total)}  ${bytes(Math.round(rate))}/s`;
   };
 

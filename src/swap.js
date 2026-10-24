@@ -62,6 +62,9 @@ export function renameRetry(from, to) {
   }
 }
 
+/** Windows reports a folder or file another program holds open as one of these. @param {unknown} e */
+const isBusy = (e) => ['EPERM', 'EBUSY', 'EACCES'].includes(/** @type {NodeJS.ErrnoException} */ (e)?.code ?? '');
+
 /** Write the journal durably: temp file, fsync, rename. @param {string} workDir @param {Journal} j */
 function writeJournal(workDir, j) {
   const f = path.join(workDir, 'journal.json');
@@ -111,29 +114,47 @@ export function swapIn(opts) {
   /** @type {Journal} */
   const j = { bakDir, moves: [], committed: false };
   writeJournal(workDir, j);
+  /** @param {Move} m */
+  const move = (m) => {
+    j.moves.push(m);
+    writeJournal(workDir, j);
+    rename(m.from, m.to);
+  };
+  /**
+   * Put an existing folder into the backup. A folder some program is sitting in (a terminal
+   * or editor whose current folder is inside it) can't be renamed on Windows, but what is
+   * inside it can be moved out. Then the folder itself stays, empty.
+   * @param {string} existing  folder name in AddOns
+   */
+  const backup = (existing) => {
+    const from = path.join(opts.addons, existing), to = path.join(bakDir, existing);
+    try {
+      move({ kind: 'backup', from, to });
+    } catch (e) {
+      if (!isBusy(e)) throw e;
+      j.moves.pop(); // that rename did not happen
+      writeJournal(workDir, j);
+      fs.mkdirSync(to, { recursive: true });
+      for (const child of fs.readdirSync(from)) move({ kind: 'backup', from: path.join(from, child), to: path.join(to, child) });
+    }
+  };
   try {
     const installing = new Set(opts.roots.map((r) => r.name.toLowerCase()));
     for (const name of opts.remove ?? []) {
       if (installing.has(name.toLowerCase())) continue;
       const existing = findChild(opts.addons, name, { dirsOnly: true });
-      if (!existing) continue;
-      const m = /** @type {Move} */ ({ kind: 'backup', from: path.join(opts.addons, existing), to: path.join(bakDir, existing) });
-      j.moves.push(m);
-      writeJournal(workDir, j);
-      rename(m.from, m.to);
+      if (existing) backup(existing);
     }
     for (const r of opts.roots) {
       const existing = findChild(opts.addons, r.name, { dirsOnly: true });
-      if (existing) {
-        const m = /** @type {Move} */ ({ kind: 'backup', from: path.join(opts.addons, existing), to: path.join(bakDir, existing) });
-        j.moves.push(m);
-        writeJournal(workDir, j);
-        rename(m.from, m.to);
+      if (existing) backup(existing);
+      const target = path.join(opts.addons, r.name);
+      if (existing && fs.existsSync(path.join(opts.addons, existing))) {
+        // The folder is still there (empty, because it could not be renamed): fill it.
+        for (const child of fs.readdirSync(r.dir)) move({ kind: 'install', from: path.join(r.dir, child), to: path.join(opts.addons, existing, child) });
+      } else {
+        move({ kind: 'install', from: r.dir, to: target });
       }
-      const m = /** @type {Move} */ ({ kind: 'install', from: r.dir, to: path.join(opts.addons, r.name) });
-      j.moves.push(m);
-      writeJournal(workDir, j);
-      rename(m.from, m.to);
     }
     j.committed = true;
     writeJournal(workDir, j);
@@ -141,6 +162,10 @@ export function swapIn(opts) {
     rollback(j, rename);
     fs.rmSync(path.join(workDir, 'journal.json'), { force: true });
     fs.rmSync(bakDir, { recursive: true, force: true });
+    if (isBusy(e)) {
+      const where = /** @type {NodeJS.ErrnoException} */ (e).path ?? opts.addons;
+      throw new Error(`${where} is in use by another program. Close any terminal, editor or game that has this folder open, then run again. Nothing was changed.`);
+    }
     throw e;
   }
   fs.rmSync(bakDir, { recursive: true, force: true });

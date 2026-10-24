@@ -4,6 +4,7 @@
 // the arrow keys; otherwise they fall back to numbered line input through io.ask,
 // which also works over pipes and in unusual terminals.
 import readline from 'node:readline';
+import { colorOn, paint, pad, vlen, sym, truncate, columns } from './ui.js';
 
 /**
  * @typedef {{ value: string, label: string, hint?: string, checked?: boolean }} Option
@@ -16,20 +17,29 @@ import readline from 'node:readline';
 /** Whether the arrow-key UI can be used. @param {IO} io */
 export const hasKeys = (io) => !!io.input.isTTY && typeof io.input.setRawMode === 'function';
 
-const KEYS_HELP_ONE = 'Up/Down to move, Enter to choose, q to go back';
-const KEYS_HELP_MANY = 'Up/Down to move, Space to toggle, a for all/none, Enter to confirm, q to cancel';
+/** @param {boolean} multi */
+const helpLine = (multi) => {
+  const s = sym();
+  const keys = `${s.up}/${s.down} move`;
+  return paint('dim', multi ? `${keys}   Space tick   a all/none   Enter confirm   Esc cancel` : `${keys}   Enter choose   Esc back`);
+};
 
 /**
  * @param {string} title @param {Option[]} options @param {boolean} multi @param {number} cursor @param {Set<string>} on
  * @returns {string[]}
  */
 function frame(title, options, multi, cursor, on) {
-  const lines = [...title.split('\n'), ''];
+  const s = sym();
+  const width = Math.max(...options.map((o) => vlen(o.label)));
+  const lines = ['', ...title.split('\n').map((l) => paint('bold', l)), ''];
   options.forEach((o, i) => {
-    const mark = multi ? (on.has(o.value) ? '[x] ' : '[ ] ') : '';
-    lines.push(`${i === cursor ? '> ' : '  '}${mark}${o.label}${o.hint ? `  - ${o.hint}` : ''}`);
+    const here = i === cursor;
+    const ptr = here ? paint('cyan', s.pointer) : ' ';
+    const mark = multi ? (on.has(o.value) ? paint('green', s.check) : paint('dim', s.uncheck)) + ' ' : '';
+    const label = here ? paint(['bold', 'cyan'], pad(o.label, width)) : pad(o.label, width);
+    lines.push(`  ${ptr} ${mark}${label}${o.hint ? '  ' + paint('dim', o.hint) : ''}`);
   });
-  lines.push('', multi ? KEYS_HELP_MANY : KEYS_HELP_ONE);
+  lines.push('', '  ' + helpLine(multi));
   return lines;
 }
 
@@ -45,8 +55,8 @@ function interactive(title, options, multi, io) {
   let drawn = 0;
   const draw = () => {
     // One screen row per line: a wrapped line would make the cursor-up below undershoot.
-    const max = (output.columns || 80) - 1;
-    const lines = frame(title, options, multi, cursor, on).map((l) => (l.length > max ? l.slice(0, max - 3) + '...' : l));
+    const max = (output.columns || columns() + 1) - 1;
+    const lines = frame(title, options, multi, cursor, on).map((l) => truncate(l, max));
     if (drawn) output.write(`\x1b[${drawn}A`);
     for (const l of lines) output.write(`\x1b[2K${l}\n`);
     // A shorter frame than the last one would leave stale lines behind.
@@ -59,9 +69,11 @@ function interactive(title, options, multi, io) {
     const wasRaw = !!input.isRaw;
     input.setRawMode?.(true);
     input.resume();
+    if (colorOn()) output.write('[?25l'); // hide the cursor while a list is showing
     /** @param {string[] | null} result */
     const done = (result) => {
       input.off('keypress', onKey);
+      if (colorOn()) output.write('[?25h');
       input.setRawMode?.(wasRaw);
       input.pause();
       resolve(result);

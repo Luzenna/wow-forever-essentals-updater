@@ -204,3 +204,53 @@ test('swap can remove retired folders in the same transaction, and restores them
   assert.ok(fs.existsSync(path.join(g.addons, 'SpokenPlayer', 'new.lua')), 'a folder being installed is never removed');
   assert.ok(fs.existsSync(path.join(g.addons, 'Details')));
 });
+
+/** A rename that refuses to move one folder, the way Windows does when a program's current directory is inside it. @param {string} busyDir */
+const renameWithBusyDir = (busyDir) => (/** @type {string} */ a, /** @type {string} */ b) => {
+  if (path.resolve(a) === path.resolve(busyDir)) throw Object.assign(new Error(`EBUSY: resource busy or locked, rename '${a}'`), { code: 'EBUSY', path: a });
+  fs.renameSync(a, b);
+};
+
+test('a folder that cannot be renamed is replaced in place', () => {
+  const f = addonsFixture();
+  const details = snapshot(path.join(f.addons, 'Details'));
+  const folder = path.join(f.addons, 'SpokenPlayer');
+  swapIn({ addons: f.addons, roots: f.roots, workDir: f.work, rename: renameWithBusyDir(folder) });
+  assert.deepEqual(fs.readdirSync(folder).sort(), ['SpokenPlayer.toc', 'new.lua'], 'old files out, new files in, same folder');
+  assert.match(fs.readFileSync(path.join(folder, 'SpokenPlayer.toc'), 'utf8'), /2\.3\.2/);
+  assert.ok(fs.existsSync(path.join(f.addons, 'SpokenContributions')), 'the other root still installs normally');
+  assert.deepEqual(snapshot(path.join(f.addons, 'Details')), details);
+  assert.deepEqual(fs.readdirSync(f.work), [], 'backup and journal removed');
+});
+
+test('an in-place replacement that fails midway restores the old folder and explains why', () => {
+  const f = addonsFixture();
+  const before = snapshot(f.addons);
+  const folder = path.join(f.addons, 'SpokenPlayer');
+  const busy = renameWithBusyDir(folder);
+  const rename = (/** @type {string} */ a, /** @type {string} */ b) => {
+    if (a.endsWith('new.lua')) throw Object.assign(new Error('EBUSY'), { code: 'EBUSY', path: a });
+    busy(a, b);
+  };
+  assert.throws(() => swapIn({ addons: f.addons, roots: f.roots, workDir: f.work, rename }), /in use by another program.*Nothing was changed/s);
+  // Every file is back; only the folder's own modified time moved, because it was emptied and refilled.
+  const files = (/** @type {Record<string, string>} */ snap) => Object.fromEntries(Object.entries(snap).filter(([k]) => !k.endsWith('/')));
+  assert.deepEqual(files(snapshot(f.addons)), files(before));
+  assert.ok(!fs.existsSync(path.join(f.work, 'journal.json')));
+});
+
+test('a program sitting in the folder does not stop the swap (real Windows lock)', { skip: process.platform !== 'win32' }, async () => {
+  const f = addonsFixture();
+  const folder = path.join(f.addons, 'SpokenPlayer');
+  const { spawn } = await import('node:child_process');
+  const holder = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { cwd: folder, stdio: 'ignore' });
+  try {
+    await new Promise((r) => setTimeout(r, 500));
+    // The plain rename must fail here, or this test proves nothing.
+    assert.throws(() => fs.renameSync(folder, folder + '.x'), /EBUSY|EPERM|EACCES/);
+    swapIn({ addons: f.addons, roots: f.roots, workDir: f.work, rename: (a, b) => fs.renameSync(a, b) });
+    assert.deepEqual(fs.readdirSync(folder).sort(), ['SpokenPlayer.toc', 'new.lua']);
+  } finally {
+    holder.kill();
+  }
+});
