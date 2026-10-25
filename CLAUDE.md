@@ -38,4 +38,4 @@ There is no linter. The build downloads and sha256-verifies the official Node bi
 
 ## Releases
 
-Pushes to `main` touching `src/`, `scripts/` or `package*.json` auto-release via `.github/workflows/release.yml`. The version bump is driven by commit subject markers: `#minor`/`[minor]`, `#major`/`[major]`, `#norelease`, `#release` (default is patch). Mind these markers when writing commit messages. The release also uploads copies of the binaries under the old `spoken-updater` asset names so old installs can self-update; `SELF_REPO` in `src/selfupdate.js` must match the real GitHub repo name.
+Pushes to `main` touching `src/`, `scripts/` or `package*.json` auto-release via `.github/workflows/release.yml`. The version bump is driven by commit subject markers: `#minor`/`[minor]`, `#major`/`[major]`, `#norelease`, `#release` (default is patch). Mind these markers when writing commit messages. Releases publish only the `wow-forever-essentals-updater` binaries (the old `spoken-updater`-named copies were dropped once the existing installs had updated; releases up to v1.1.1 still carry them). `SELF_REPO` in `src/selfupdate.js` must match the real GitHub repo name.

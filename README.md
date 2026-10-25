@@ -184,8 +184,7 @@ To add an addon, add a group in `src/catalog.js` (`GROUPS` and `buildCatalog`); 
 Every push to `main` that touches `src/`, `scripts/` or `package*.json` is released by
 `.github/workflows/release.yml`. It runs the tests on Ubuntu and Windows, builds both
 executables, smoke-tests each on its own OS, and publishes a GitHub release with
-`SHA256SUMS.txt`. Copies of both executables are also published under the old `spoken-updater` names so
-installs of the old tool keep self-updating.
+`SHA256SUMS.txt`.
 
 The version comes from the latest `vX.Y.Z` tag, bumped by the subject lines of the pushed commits:
 

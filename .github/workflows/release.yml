@@ -163,15 +163,8 @@ jobs:
           ./dist/wow-forever-essentals-updater-linux-x64 --help > /dev/null
           HOME=$(mktemp -d) ./dist/wow-forever-essentals-updater-linux-x64 detect || test $? -eq 2
 
-      # Installs of this tool under its old name (spoken-updater) look for these asset
-      # names when they self-update. Keep publishing them for a transition period.
-      - name: Legacy asset names
-        run: |
-          cp dist/wow-forever-essentals-updater.exe dist/spoken-updater.exe
-          cp dist/wow-forever-essentals-updater-linux-x64 dist/spoken-updater-linux-x64
-
       - name: Checksums
-        run: cd dist && sha256sum wow-forever-essentals-updater.exe wow-forever-essentals-updater-linux-x64 spoken-updater.exe spoken-updater-linux-x64 > SHA256SUMS.txt && cat SHA256SUMS.txt
+        run: cd dist && sha256sum wow-forever-essentals-updater.exe wow-forever-essentals-updater-linux-x64 > SHA256SUMS.txt && cat SHA256SUMS.txt
 
       - uses: actions/upload-artifact@v4
         with:
@@ -222,13 +215,10 @@ jobs:
             ### Download
             - `wow-forever-essentals-updater.exe`: Windows 10/11 64-bit.
             - `wow-forever-essentals-updater-linux-x64`: Linux x64 / Steam Deck. `chmod +x` it, then run it from Konsole.
-            - `spoken-updater.exe` and `spoken-updater-linux-x64`: identical copies under the old name, so existing installs keep self-updating.
             - `SHA256SUMS.txt`: checksums.
 
             First time on a new machine: run `detect` to see which AddOns folder it found.
           files: |
             dist/wow-forever-essentals-updater.exe
             dist/wow-forever-essentals-updater-linux-x64
-            dist/spoken-updater.exe
-            dist/spoken-updater-linux-x64
             dist/SHA256SUMS.txt
