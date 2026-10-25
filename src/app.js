@@ -7,17 +7,19 @@ import path from 'node:path';
 import readline from 'node:readline/promises';
 import * as semver from './semver.js';
 import * as log from './log.js';
-import { buildCatalog, GROUPS } from './catalog.js';
+import { buildCatalog, listGroups, RETIRED_ITEMS } from './catalog.js';
 import { loadConfig, saveConfig, loadState, saveState, stateKey } from './config.js';
-import { detect } from './detect/detect.js';
+import { loadCustom, removeCustom } from './custom.js';
+import { summarizeNotes } from './notes.js';
+import { detect, isForeverFolder } from './detect/detect.js';
 import { findChild } from './detect/fold.js';
 import { tocFiles, readFolderToc, folderSupports, FOREVER_INTERFACE } from './toc.js';
 import { cachePath, download, remainingBytes } from './download.js';
-import { extractZip, findAddonRoots, isPlaceholder, uncompressedSize } from './extract.js';
+import { extractZip, findAddonRoots, isPlaceholder, isSpokenFolder, uncompressedSize } from './extract.js';
 import { swapIn, recover, workDirFor, legacyWorkDirFor, pendingJournal, removeLeftovers } from './swap.js';
 import { acquireLock, legacyInstanceRunning } from './lock.js';
 import { createProgress } from './progress.js';
-import { freeBytes, deviceOf, runningWow } from './platform.js';
+import { freeBytes, deviceOf, runningWow, devCopyReason } from './platform.js';
 import { colorOn, paint, pad, sym, vlen } from './ui.js';
 
 export class UsageError extends Error {}
@@ -43,8 +45,9 @@ const UNPACK_FACTOR = 1.05; // audio barely compresses; exact size is checked ag
  * @property {boolean} [dryRun]
  * @property {string} [lang]
  * @property {string[]} [only]
+ * @property {boolean} [overwriteDev]  replace folders that look like a developer's working copy
  *
- * @typedef {'current' | 'outdated' | 'not-installed' | 'missing' | 'broken' | 'unavailable' | 'error'} Status
+ * @typedef {'current' | 'outdated' | 'not-installed' | 'missing' | 'broken' | 'unavailable' | 'error' | 'dev'} Status
  * @typedef {object} Plan
  * @property {import('./catalog.js').Item} item
  * @property {import('./sources/source.js').Release | null} release
@@ -83,7 +86,7 @@ export function treeStats(dir) {
 function adoptFolders(addons, item, rel) {
   let names;
   try {
-    names = fs.readdirSync(addons, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name);
+    names = fs.readdirSync(addons, { withFileTypes: true }).filter((e) => e.isDirectory() || e.isSymbolicLink()).map((e) => e.name);
   } catch {
     return [];
   }
@@ -108,9 +111,10 @@ function adoptFolders(addons, item, rel) {
  * @param {import('./sources/source.js').Release | null} rel
  * @param {string} addons
  * @param {import('./config.js').ItemState | undefined} st
+ * @param {{ overwriteDev?: boolean }} [flags]
  * @returns {Plan}
  */
-export function inspect(item, rel, addons, st) {
+export function inspect(item, rel, addons, st, flags = {}) {
   /** @type {Plan} */
   const plan = { item, release: rel, status: 'current', installed: null, reason: '', folders: [], diskBytes: 0, act: false };
   if (!rel) {
@@ -127,6 +131,8 @@ export function inspect(item, rel, addons, st) {
     const actual = findChild(addons, name, { dirsOnly: true });
     if (!actual) return { ...plan, status: 'missing', reason: `folder ${name} is missing`, act: true };
     const dir = path.join(addons, actual);
+    const dev = flags.overwriteDev ? null : devCopyReason(addons, actual);
+    if (dev) return { ...plan, status: 'dev', reason: `${actual} ${dev}, so it is left alone`, act: false };
     plan.folders.push(actual);
     if (!tocFiles(dir).length) return { ...plan, status: 'broken', reason: `${name} has no .toc`, act: true };
     const s = treeStats(dir);
@@ -149,19 +155,21 @@ export function inspect(item, rel, addons, st) {
 
   const leftovers = (item.replaces?.folders ?? []).filter((n) => findChild(addons, n, { dirsOnly: true }));
   const exclusionChanged = !!st && [...(st.exclude ?? [])].sort().join() !== [...(item.exclude ?? [])].sort().join();
+  // A .toc often can't tell 1.0.5 from its 1.0.5-f rebuild, so a pin is also checked against the tag we installed from.
+  if (item.pin && st && st.tag !== rel.tag) return { ...plan, status: 'outdated', reason: `${st.version} -> ${rel.version} (pinned)`, act: true };
   if (installed && semver.compare(installed, rel.version, o) === 0) {
     if (leftovers.length) return { ...plan, status: 'outdated', reason: `old folders to remove: ${leftovers.join(', ')}`, act: true };
     if (exclusionChanged) return { ...plan, status: 'outdated', reason: 'zones/books setting changed', act: true };
     return plan;
   }
-  // Never downgrade: a newer build (from Wago, or a dev copy) is left alone.
-  if (installed && semver.compare(installed, rel.version, o) > 0) return { ...plan, reason: `newer than the latest release (${rel.version})` };
+  // Never downgrade: a newer build (from Wago, or a dev copy) is left alone. A pinned version is the exception: it is the target.
+  if (!item.pin && installed && semver.compare(installed, rel.version, o) > 0) return { ...plan, reason: `newer than the latest release (${rel.version})` };
   // Upstream sometimes ships a .toc whose Version differs from the tag. If the
   // folders still hold exactly what we installed from this tag, it is current.
   if (st && st.tag === rel.tag && primary.length && primary.every((f) => f.version === f.recordedVersion)) {
     return { ...plan, installed: st.version };
   }
-  return { ...plan, status: 'outdated', reason: `${installed ?? 'unknown'} -> ${rel.version}`, act: true };
+  return { ...plan, status: 'outdated', reason: `${installed ?? 'unknown'} -> ${rel.version}${item.pin ? ' (pinned)' : ''}`, act: true };
 }
 
 /** One line of input from the terminal, or deps.ask when a test supplies it. @param {Deps} deps */
@@ -197,6 +205,12 @@ export async function resolveAddons(opts, deps, cfg) {
   }
   const confirmed = found.filter((c) => c.forever);
   if (confirmed.length === 1) return confirmed[0].addons;
+  // Several installs: the one in the _forever_ client folder is the default.
+  const preferred = found.filter(isForeverFolder);
+  if (preferred.length === 1) {
+    log.debug(`several WoW installs found; using the _forever_ one: ${preferred[0].addons}`);
+    return preferred[0].addons;
+  }
   if (found.length === 1) {
     log.warn(`using ${found[0].addons} (could not confirm it is the 1.60.x Forever client)`);
     return found[0].addons;
@@ -208,7 +222,10 @@ export async function resolveAddons(opts, deps, cfg) {
   log.info(`Several WoW installs were found:\n${list}`);
   const ask = makeAsk(deps);
   for (;;) {
-    const n = Number((await ask(`Install into which one? [1-${found.length}] `)).trim());
+    // The list is sorted best guess first, so Enter takes 1 when that guess is a Forever install.
+    const fallback = found[0].forever || isForeverFolder(found[0]);
+    const answer = (await ask(`Install into which one? [1-${found.length}${fallback ? ', Enter = 1' : ''}] `)).trim();
+    const n = answer === '' && fallback ? 1 : Number(answer);
     if (Number.isInteger(n) && n >= 1 && n <= found.length) {
       const chosen = found[n - 1].addons;
       saveConfig(deps.configDir, { ...cfg, addons_path: chosen });
@@ -219,11 +236,11 @@ export async function resolveAddons(opts, deps, cfg) {
 }
 
 /** @param {Options} opts @param {import('./config.js').Config} cfg */
-export function catalogFor(opts, cfg) {
+export function catalogFor(opts, cfg, custom = []) {
   // --only can name any item, selected or not.
   const items = buildCatalog({
     language: opts.lang ?? cfg.language, includeZones: cfg.include_zones, includeBooks: cfg.include_books,
-    selected: opts.only?.length ? undefined : cfg.selected,
+    selected: opts.only?.length ? undefined : cfg.selected, custom, pinned: cfg.pinned,
   });
   if (opts.only?.length) {
     const unknown = opts.only.filter((id) => !items.some((i) => i.id === id));
@@ -267,12 +284,19 @@ function checkSpace(plans, addons, cacheDir, keepDownloads) {
 /**
  * Download, unpack and swap one item. Returns bytes downloaded.
  * @param {Plan} plan @param {string} addons @param {Deps} deps @param {import('./config.js').Config} cfg
- * @param {import('./config.js').State} state
+ * @param {import('./config.js').State} state @param {Options} opts
  */
-async function installItem(plan, addons, deps, cfg, state) {
+async function installItem(plan, addons, deps, cfg, state, opts) {
   const rel = /** @type {import('./sources/source.js').Release} */ (plan.release);
   const L = log.scoped(plan.item.id, plan.item.title);
   L.head(`${plan.reason}`);
+  if (colorOn() && plan.status === 'outdated' && plan.installed) {
+    const news = summarizeNotes(rel.notes);
+    if (news.length) {
+      L.info("What's new:");
+      for (const n of news) L.info(`  ${n}`);
+    }
+  }
   const zip = cachePath(deps.cacheDir, plan.item, rel);
   const left = remainingBytes(zip, rel.asset.size);
   L.info(`${colorOn() ? '' : plan.reason + ': '}${left ? `downloading ${log.bytes(left)}` : 'using cached download'} (${rel.asset.name})`);
@@ -325,6 +349,13 @@ async function installItem(plan, addons, deps, cfg, state) {
       ...(plan.item.replaces?.folders ?? []),
     ])].filter((n) => plan.item.owns(n) &&!keepNames.has(n.toLowerCase()) && findChild(addons, n, { dirsOnly: true }));
     for (const n of remove) L.info(`removing old folder ${n}`);
+    if (!opts.overwriteDev) {
+      for (const n of [...keep.map((r) => r.name), ...remove]) {
+        const here = findChild(addons, n, { dirsOnly: true });
+        const dev = here && devCopyReason(addons, here);
+        if (dev) throw new Error(`${here} ${dev}, so it was left alone (pass --overwrite-dev to replace it)`);
+      }
+    }
 
     swapIn({ addons, roots: keep, remove, workDir });
     for (const id of plan.item.replaces?.items ?? []) delete mine[id];
@@ -364,27 +395,26 @@ async function installItem(plan, addons, deps, cfg, state) {
  */
 export async function makePlan(opts, deps) {
   const cfg = loadConfig(deps.configDir);
+  const { entries: custom, problems } = loadCustom(deps.configDir);
   // With --only, other items are neither queried nor reported: an unrelated repo being down must not fail the run.
-  const items = catalogFor(opts, cfg).filter((i) => !opts.only?.length || opts.only.includes(i.id));
+  const items = catalogFor(opts, cfg, custom).filter((i) => !opts.only?.length || opts.only.includes(i.id));
   const addons = await resolveAddons(opts, deps, cfg);
   const state = loadState(deps.configDir);
   const mine = state.installs[stateKey(addons)] ?? {};
+  // One request per repo is shared between its items, and the repos are asked at the same time.
   /** @type {Plan[]} */
-  const plans = [];
-  for (const item of items) {
-    /** @type {Plan} */
-    let p;
+  const plans = await Promise.all(items.map(async (item) => {
     try {
       const rel = await deps.source.latest(item);
-      p = inspect(item, rel, addons, mine[item.id]);
-      if (opts.only?.length) p.act = opts.only.includes(item.id) && !!rel;
+      const p = inspect(item, rel, addons, mine[item.id], { overwriteDev: opts.overwriteDev });
+      if (opts.only?.length) p.act = opts.only.includes(item.id) && !!rel && p.status !== 'dev';
+      return p;
     } catch (e) {
       // One broken release (e.g. an unexpected asset layout) must not stop the others.
-      p = { item, release: null, status: 'error', installed: null, reason: /** @type {Error} */ (e).message, folders: [], diskBytes: 0, act: false };
+      return /** @type {Plan} */ ({ item, release: null, status: 'error', installed: null, reason: /** @type {Error} */ (e).message, folders: [], diskBytes: 0, act: false });
     }
-    plans.push(p);
-  }
-  return { cfg, addons, state, plans };
+  }));
+  return { cfg, addons, state, plans, custom, problems };
 }
 
 /** @param {Plan} p */
@@ -402,7 +432,8 @@ const describe = (p) => {
  * @param {Options} opts @param {Deps} deps @returns {Promise<number>} exit code
  */
 export async function update(opts, deps) {
-  let { cfg, addons, state, plans } = await makePlan(opts, deps);
+  let { cfg, addons, state, plans, problems } = await makePlan(opts, deps);
+  for (const w of problems) log.warn(w);
   const workDir = workDirFor(addons);
   // The old tool's work dir is only ours to recover while no old copy is running (its lock is separate from ours).
   const legacyDirs = legacyInstanceRunning(deps.env) ? [] : [legacyWorkDirFor(addons)];
@@ -416,6 +447,7 @@ export async function update(opts, deps) {
       if (p.status === 'error') L.row('fail', p.reason);
       else if (p.status === 'unavailable' && p.item.optional) L.row('skip', describe(p));
       else if (p.status === 'unavailable') L.row('warn', describe(p));
+      else if (p.status === 'dev') L.row('skip', p.reason);
       else if (!p.act && p.status === 'current') L.row('ok', `${p.installed ?? ''} ${p.reason || 'up to date'}`.trim());
       else if (!p.act) L.row('skip', `not selected (${p.reason})`);
     }
@@ -478,7 +510,7 @@ export async function update(opts, deps) {
     const failed = errored().map((p) => p.item.id);
     for (const p of todo) {
       try {
-        downloaded += await installItem(p, addons, deps, cfg, state);
+        downloaded += await installItem(p, addons, deps, cfg, state, opts);
         updated.push(p.item.id);
       } catch (e) {
         failed.push(p.item.id);
@@ -507,18 +539,153 @@ export async function update(opts, deps) {
   }
 }
 
+/**
+ * The ids (of state entries, pins ...) that belong to an addon group: Spoken is several items
+ * (the addon, its voice packs in any language, and the retired 2.x items), every other addon is one.
+ * @param {string} group @param {string[]} ids
+ */
+export const idsOfGroup = (group, ids) =>
+  ids.filter((id) => (group === 'spoken' ? id === 'spoken' || /^(quests|zones|books)-audio/.test(id) || RETIRED_ITEMS.includes(id) : id === group));
+
+/**
+ * Remove addons: move the folders this tool installed for them into the backup, delete
+ * the backup, and forget them (state, selection, pins, and the addons.json entry for a custom one).
+ * An addon whose folders are already gone is still forgotten. Settings in WTF are never touched.
+ * `opts.only` names addon groups, e.g. "nodesight".
+ * @param {Options} opts @param {Deps} deps @returns {Promise<number>} exit code
+ */
+export async function uninstall(opts, deps) {
+  const ids = opts.only ?? [];
+  if (!ids.length) throw new UsageError('remove needs --only <addon>[,<addon>]');
+  const { entries: custom } = loadCustom(deps.configDir);
+  const groups = listGroups(custom);
+  const unknown = ids.filter((id) => !groups.some((g) => g.id === id));
+  if (unknown.length) throw new UsageError(`unknown addon(s): ${unknown.join(', ')}. Known: ${groups.map((g) => g.id).join(', ')}`);
+  const addons = await resolveAddons(opts, deps, loadConfig(deps.configDir));
+  const key = stateKey(addons);
+  const workDir = workDirFor(addons);
+  const L = (/** @type {import('./catalog.js').Group} */ g) => log.scoped(g.id, g.title);
+
+  // What to do for each addon, from the state on disk right now. Run again once the lock is held.
+  const makeJobs = () => {
+    const cfg = loadConfig(deps.configDir);
+    const owner = new Map(buildCatalog({ language: 'enUS', includeZones: true, includeBooks: true, custom }).map((i) => [i.group, i.owns]));
+    const state = loadState(deps.configDir);
+    const mine = state.installs[key] ?? {};
+    return {
+      state, mine, cfg,
+      jobs: ids.map((id) => {
+        const group = /** @type {import('./catalog.js').Group} */ (groups.find((g) => g.id === id));
+        const owns = id === 'spoken' ? isSpokenFolder : owner.get(id);
+        const stateIds = idsOfGroup(id, Object.keys(mine));
+        const recorded = [...new Set(stateIds.flatMap((sid) => Object.keys(mine[sid]?.folders ?? {})))];
+        const folders = /** @type {string[]} */ (recorded.map((n) => findChild(addons, n, { dirsOnly: true })).filter((n) => !!n && !!owns?.(n)));
+        const pins = idsOfGroup(id, Object.keys(cfg.pinned));
+        const known = stateIds.length > 0 || group.custom || cfg.selected.includes(id) || pins.length > 0;
+        return { group, stateIds, folders, pins, known };
+      }),
+    };
+  };
+
+  /** Drop jobs that are refused or have nothing to do, saying why. @param {ReturnType<typeof makeJobs>['jobs']} jobs */
+  const usable = (jobs) => {
+    let refused = 0;
+    const go = jobs.filter((j) => {
+      if (!j.known) {
+        L(j.group).row('skip', 'not installed, nothing to remove');
+        return false;
+      }
+      const dev = opts.overwriteDev ? null : j.folders.map((f) => [f, devCopyReason(addons, f)]).find(([, why]) => why);
+      if (dev) {
+        L(j.group).row('warn', `${dev[0]} ${dev[1]}, so it was left alone (pass --overwrite-dev to remove it anyway)`);
+        refused++;
+        return false;
+      }
+      return true;
+    });
+    return { go, refused };
+  };
+
+  const first = usable(makeJobs().jobs);
+  let code = first.refused ? 1 : 0;
+  if (!first.go.length) return code;
+  for (const j of first.go) log.info(`${paint('bold', j.group.title)}: ${j.folders.length ? j.folders.join(', ') : 'folders already gone; it will just be forgotten'}`);
+  if (opts.dryRun) {
+    log.info('Would remove the above (dry run, nothing changed).');
+    return code;
+  }
+
+  // Check the game and ask before locking, but do the real work from a fresh look at the state under the lock.
+  const running = (deps.runningWow ?? runningWow)();
+  if (running.length && !opts.force) {
+    throw new UsageError(`World of Warcraft is running (${running.join(', ')}). Close the game first, or pass --force.`);
+  }
+  if (!opts.yes) {
+    if (!(deps.tty ?? process.stdin.isTTY)) throw new UsageError('remove needs --yes when there is no terminal to ask in');
+    const ans = (await makeAsk(deps)(`Remove ${first.go.map((j) => j.group.title).join(', ')}? Your settings in WTF are kept. [y/N] `)).trim();
+    if (!/^y(es)?$/i.test(ans)) {
+      log.info('Nothing removed.');
+      return code;
+    }
+  }
+  let release;
+  try {
+    release = acquireLock(deps.configDir);
+  } catch (e) {
+    if (/** @type {any} */ (e).usage) throw new UsageError(/** @type {Error} */ (e).message);
+    throw e;
+  }
+  try {
+    if (pendingJournal(workDir) || pendingJournal(legacyWorkDirFor(addons))) {
+      throw new UsageError('an interrupted install is waiting to be recovered; run update first, then remove');
+    }
+    const now = makeJobs();
+    const { go } = usable(now.jobs.filter((j) => first.go.some((f) => f.group.id === j.group.id)));
+    for (const j of go) {
+      try {
+        if (j.folders.length) swapIn({ addons, roots: [], remove: j.folders, workDir });
+      } catch (e) {
+        L(j.group).row('fail', /** @type {Error} */ (e).message);
+        code = 1;
+        continue;
+      }
+      for (const sid of j.stateIds) delete now.mine[sid];
+      saveState(deps.configDir, now.state);
+      const cfg = loadConfig(deps.configDir);
+      const pinned = { ...cfg.pinned };
+      for (const pid of j.pins) delete pinned[pid];
+      saveConfig(deps.configDir, { ...cfg, selected: cfg.selected.filter((g) => g !== j.group.id), pinned });
+      if (j.group.custom) {
+        try {
+          removeCustom(deps.configDir, j.group.id);
+        } catch (e) {
+          L(j.group).row('warn', `${/** @type {Error} */ (e).message}`);
+        }
+      }
+      L(j.group).row('ok', j.folders.length ? `removed ${j.folders.join(', ')}` : 'removed from your list');
+    }
+    try {
+      fs.rmdirSync(workDir); // only succeeds when empty
+    } catch { /* still has other content */ }
+  } finally {
+    release();
+  }
+  return code;
+}
+
 /** @param {Options} opts @param {Deps} deps */
 export async function status(opts, deps) {
-  const { cfg, addons, plans } = await makePlan(opts, deps);
+  const { cfg, addons, plans, custom, problems } = await makePlan(opts, deps);
+  for (const w of problems) log.warn(w);
   log.info(`${paint('dim', 'AddOns folder:')} ${addons}\n`);
   /** @type {Record<string, [string, string]>} */
   const words = {
     outdated: ['update available', 'yellow'], 'not-installed': ['not installed', 'yellow'], missing: ['folder missing', 'yellow'],
-    broken: ['needs repair', 'yellow'], error: ['error', 'red'], unavailable: ['n/a', 'dim'],
+    broken: ['needs repair', 'yellow'], error: ['error', 'red'], unavailable: ['n/a', 'dim'], dev: ['developer copy', 'cyan'],
   };
   const rows = [['ADDON', 'INSTALLED', 'LATEST', 'STATUS', 'DOWNLOAD', 'ID'].map((h) => paint(['bold', 'dim'], h))];
   for (const p of plans) {
-    const [word, tint] = p.status === 'current' ? (p.reason ? ['newer than release', 'dim'] : ['up to date', 'green']) : words[p.status] ?? [p.status, 'dim'];
+    const [word, tint] = p.status === 'current' ? (p.reason ? ['newer than release', 'dim'] : p.item.pin ? [`held at ${p.item.pin}`, 'cyan'] : ['up to date', 'green']) : words[p.status] ?? [p.status, 'dim'];
     rows.push([
       paint('bold', p.item.title),
       p.installed ?? '-',
@@ -530,7 +697,7 @@ export async function status(opts, deps) {
   }
   const w = rows[0].map((_, c) => Math.max(...rows.map((r) => vlen(r[c]))));
   for (const r of rows) log.info('  ' + r.map((cell, c) => pad(cell, w[c])).join('   ').trimEnd());
-  const off = GROUPS.filter((g) => !opts.only?.length && !cfg.selected.includes(g.id));
+  const off = listGroups(custom).filter((g) => !opts.only?.length && !cfg.selected.includes(g.id));
   if (off.length) log.info(`\nNot selected (left alone): ${off.map((g) => g.title).join(', ')}`);
   // Not p.act: with --only that is set for every named item, installed or not.
   const pending = plans.filter((p) => p.act && p.status !== 'current');
@@ -590,7 +757,7 @@ async function cleanLocked(opts, deps, cfg) {
   /** @type {Set<string>} */
   const keep = new Set();
   try {
-    for (const item of catalogFor(opts, cfg)) {
+    for (const item of catalogFor(opts, cfg, loadCustom(deps.configDir).entries)) {
       const rel = await deps.source.latest(item);
       if (rel) keep.add(path.dirname(cachePath(deps.cacheDir, item, rel)));
     }

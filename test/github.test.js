@@ -126,7 +126,7 @@ test('plain-tag items resolve through their own repo and asset stem', async () =
   assert.equal(r?.tag, 'v1.0.6');
   assert.equal(r?.asset.name, 'DialogueUI-1.0.6.zip');
   await src.latest(dui);
-  assert.deepEqual(urls, ['https://api.github.com/repos/Peterodox/YUI-Dialogue/releases?per_page=100'], 'one request per repo per run');
+  assert.deepEqual(urls, ['https://api.github.com/repos/Peterodox/YUI-Dialogue/releases?per_page=30'], 'one request per repo per run');
 });
 
 test('a failed release fetch is retried on the next call, not cached', async () => {

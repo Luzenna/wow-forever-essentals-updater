@@ -70,10 +70,22 @@ test('Windows: Battle.net.config default path and a renamed launch folder via co
   const lib = path.join(t, 'X', 'Blizzard');
   wowRoot(path.join(lib, 'World of Warcraft'), ['_forever_'], { buildInfo: false });
   writeTree(appData, { 'Battle.net/Battle.net.config': JSON.stringify({ Client: { Install: { DefaultInstallPath: lib } } }) });
-  assert.equal(detect({ clientFolder: '_classic_beta_' }, env({ platform: 'win32', appData })).length, 0);
-  const found = detect({ clientFolder: '_forever_' }, env({ platform: 'win32', appData }));
-  assert.equal(found.length, 1);
-  assert.equal(found[0].forever, false, 'not confirmed without version info');
+  // _forever_ is always looked at, whatever client folder the config names.
+  for (const clientFolder of ['_classic_beta_', '_forever_']) {
+    const found = detect({ clientFolder }, env({ platform: 'win32', appData }));
+    assert.equal(found.length, 1, clientFolder);
+    assert.equal(found[0].forever, false, 'not confirmed without version info');
+  }
+  assert.equal(detect({ clientFolder: '_classic_beta_' }, env({ platform: 'win32', appData }))[0].addons, path.join(lib, 'World of Warcraft', '_forever_', 'Interface', 'AddOns'));
+});
+
+test('several installs: the _forever_ one is listed first, and an unconfirmed one still beats other folders', () => {
+  const t = tmpDir();
+  const drive = path.join(t, 'C');
+  const wow = path.join(drive, 'Program Files (x86)', 'World of Warcraft');
+  wowRoot(wow, ['_classic_beta_', '_forever_'], { buildInfo: false });
+  const found = detect({ clientFolder: '_classic_beta_' }, env({ platform: 'win32', drives: [drive] }));
+  assert.deepEqual(found.map((c) => path.basename(c.clientDir)), ['_forever_', '_classic_beta_']);
 });
 
 test('Steam Deck: Proton prefix on internal storage and another on the SD card', () => {

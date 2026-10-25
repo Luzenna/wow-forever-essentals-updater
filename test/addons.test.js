@@ -139,10 +139,10 @@ test('settings are carried over from spoken-updater once, and never overwritten'
   assert.equal(migrateLegacy(path.join(home, 'elsewhere'), { ...env, WFE_UPDATER_HOME: path.join(home, 'elsewhere') }), false, 'an explicit home is not legacy');
 });
 
-test('config selection drops unknown ids and never shares the default array', () => {
+test('config selection keeps ids it does not know and never shares the default array', () => {
   const dir = tmpDir();
   fs.writeFileSync(path.join(dir, 'config.json'), JSON.stringify({ selected: ['nodesight', 'gone'] }));
-  assert.deepEqual(loadConfig(dir).selected, ['nodesight']);
+  assert.deepEqual(loadConfig(dir).selected, ['nodesight', 'gone'], 'ids are kept: custom addons come from addons.json');
   const a = loadConfig(tmpDir());
   a.selected.pop();
   assert.equal(loadConfig(tmpDir()).selected.length, DEFAULT_CONFIG.selected.length);

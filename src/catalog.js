@@ -11,6 +11,7 @@
 //
 // Every other addon is one zip on plain vX.Y.Z tags that holds one folder.
 import { isSpokenFolder } from './extract.js';
+import { SPOKEN, BUILTIN, BUILTIN_IDS } from './addons.js';
 
 /**
  * @typedef {'addon' | 'pack'} Kind
@@ -29,27 +30,30 @@ import { isSpokenFolder } from './extract.js';
  * @property {(folder: string) => boolean} owns  folders this item may write or remove; nothing else is ever touched
  * @property {string[]} [folders]   exact folder names, when known up front (lets a hand-installed copy be adopted)
  * @property {boolean} [placeholders] the zip carries empty placeholder folders that must not be installed
+ * @property {RegExp} [assetPattern] picks the zip when a release has several
+ * @property {string} [pin]         hold this exact version (set from the config's "pinned")
  * @property {string[]} [exclude]   folders in the zip not to install (lower case)
  * @property {{ items: string[], folders: string[] }} [replaces]  retired items/folders this item supersedes
- * @typedef {{ language: string, includeZones: boolean, includeBooks: boolean, selected?: string[] }} CatalogOptions
- * @typedef {{ id: string, title: string, blurb: string, repo: string }} Group
+ * @typedef {{ language: string, includeZones: boolean, includeBooks: boolean, selected?: string[], custom?: import('./addons.js').AddonEntry[], pinned?: Record<string, string> }} CatalogOptions
+ * @typedef {{ id: string, title: string, blurb: string, repo: string, custom?: boolean }} Group
  */
 
-/** Addon groups, in menu order. @type {Group[]} */
-export const GROUPS = [
-  { id: 'spoken', title: 'Spoken', blurb: 'voiceover for quests, zones and books (about 2.3 GB of audio)', repo: 'rusty-key/spoken-wow' },
-  { id: 'luzenna-forever', title: 'LuzennaForever', blurb: 'one-bag tweaks, alt inventory tracking, error log', repo: 'Luzenna/wowaddon-LuzennaForever' },
-  { id: 'nodesight', title: 'NodeSight', blurb: 'herb and ore names on the minimap', repo: 'Krelock/NodeSight' },
-  { id: 'dialogueui', title: 'Dialogue UI', blurb: 'quest and gossip dialogue window', repo: 'Peterodox/YUI-Dialogue' },
-];
-export const ALL_GROUPS = GROUPS.map((g) => g.id);
+/**
+ * Addon groups in menu order: Spoken, the built-in addons, then the user's own.
+ * @param {import('./addons.js').AddonEntry[]} [custom] @returns {Group[]}
+ */
+export function listGroups(custom = []) {
+  return [SPOKEN, ...BUILTIN, ...custom].map((a) => ({ id: a.id, title: a.title, blurb: a.blurb, repo: a.repo, custom: 'custom' in a && !!a.custom }));
+}
+/** Ids of the groups that ship with the tool. */
+export const ALL_GROUPS = BUILTIN_IDS;
 
 /** Item ids of the 2.x addons, which earlier versions of this tool installed. */
 export const RETIRED_ITEMS = ['player', 'quests', 'zones', 'books'];
 /** Their folders (the same list Spoken's own Core.lua warns about, minus the non-Spoken-named placeholders). */
 export const RETIRED_FOLDERS = ['SpokenPlayer', 'SpokenQuests', 'SpokenZones', 'SpokenBooks'];
 
-const SPOKEN_REPO = 'rusty-key/spoken-wow';
+const SPOKEN_REPO = SPOKEN.repo;
 
 /** @param {string} id @param {string} title @param {Kind} kind @param {boolean} [optional] @returns {Item} */
 const spokenPack = (id, title, kind, optional = false) => ({
@@ -58,32 +62,38 @@ const spokenPack = (id, title, kind, optional = false) => ({
 });
 
 /**
- * A single-folder addon released on plain vX.Y.Z tags.
- * @param {{ id: string, title: string, repo: string, folder: string, letterSuffix?: boolean }} a @returns {Item}
+ * An addon released on plain vX.Y.Z tags that owns a fixed set of folders.
+ * @param {import('./addons.js').AddonEntry} a @returns {Item}
  */
-const plainAddon = (a) => ({
-  id: a.id, group: a.id, repo: a.repo, tagMode: 'plain', assetPrefix: a.folder, letterSuffix: a.letterSuffix, cacheKey: a.id,
-  kind: 'addon', title: a.title, optional: false,
-  folders: [a.folder], owns: (n) => n.toLowerCase() === a.folder.toLowerCase(),
-});
+const plainAddon = (a) => {
+  const mine = new Set(a.folders.map((f) => f.toLowerCase()));
+  return {
+    id: a.id, group: a.id, repo: a.repo, tagMode: 'plain', assetPrefix: a.folders[0], letterSuffix: a.letterSuffix, cacheKey: a.id,
+    kind: 'addon', title: a.title, optional: false, folders: a.folders, owns: (n) => mine.has(n.toLowerCase()),
+    assetPattern: a.asset ? new RegExp(a.asset, 'i') : undefined,
+  };
+};
 
 /**
  * Items to manage, in install order: each selected addon, with Spoken's voice packs after it.
  * @param {CatalogOptions} opts @returns {Item[]}
  */
 export function buildCatalog(opts) {
-  const selected = new Set(opts.selected ?? ALL_GROUPS);
+  const plain = [...BUILTIN, ...(opts.custom ?? [])];
+  const selected = new Set(opts.selected ?? [SPOKEN.id, ...plain.map((a) => a.id)]);
   /** @type {Item[]} */
   const items = [];
-  if (selected.has('spoken')) items.push(...spokenItems(opts));
-  if (selected.has('luzenna-forever')) {
-    items.push(plainAddon({ id: 'luzenna-forever', title: 'LuzennaForever', repo: 'Luzenna/wowaddon-LuzennaForever', folder: 'LuzennaForever' }));
+  if (selected.has(SPOKEN.id)) {
+    for (const it of spokenItems(opts)) {
+      if (opts.pinned?.[it.id]) it.pin = opts.pinned[it.id];
+      items.push(it);
+    }
   }
-  if (selected.has('nodesight')) {
-    items.push(plainAddon({ id: 'nodesight', title: 'NodeSight', repo: 'Krelock/NodeSight', folder: 'NodeSight' }));
-  }
-  if (selected.has('dialogueui')) {
-    items.push(plainAddon({ id: 'dialogueui', title: 'Dialogue UI', repo: 'Peterodox/YUI-Dialogue', folder: 'DialogueUI', letterSuffix: true }));
+  for (const a of plain) {
+    if (!selected.has(a.id)) continue;
+    const item = plainAddon(a);
+    if (opts.pinned?.[a.id]) item.pin = opts.pinned[a.id];
+    items.push(item);
   }
   return items;
 }

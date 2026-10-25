@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { paint, stripAnsi, vlen, pad, truncate, banner, sym, colorOn, unicodeOn } from '../src/ui.js';
 import { rowFor } from '../src/menu.js';
-import { GROUPS } from '../src/catalog.js';
+import { listGroups } from '../src/catalog.js';
 
 /** Run with environment variables set, then put them back. @param {Record<string, string | undefined>} env @param {() => void} fn */
 function withEnv(env, fn) {
@@ -49,7 +49,7 @@ test('ASCII mode (WFE_ASCII) uses plain symbols and a plain banner', () => {
 });
 
 test('dashboard rows describe each addon in plain words', () => {
-  const g = GROUPS[1]; // luzenna-forever
+  const g = listGroups()[1]; // luzenna-forever
   const item = /** @type {any} */ ({ id: 'luzenna-forever', group: 'luzenna-forever', kind: 'addon' });
   const plan = (/** @type {any} */ o) => /** @type {any} */ ({ item, release: { version: '1.0.0', asset: { size: 14000 } }, installed: null, act: false, status: 'current', ...o });
   assert.equal(rowFor(g, false, []).state, 'off');

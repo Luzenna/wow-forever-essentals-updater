@@ -73,6 +73,30 @@ export async function uncompressedSize(file) {
 }
 
 /**
+ * The addon folders a zip would install, read from its file list without unpacking:
+ * a folder X is an addon when the zip holds X/X.toc (or a flavor-suffixed one), wrapper
+ * folders allowed. A zip with .toc files at its root counts as one folder named after the .toc.
+ * @param {string} file @returns {Promise<string[]>}
+ */
+export async function zipAddonFolders(file) {
+  const zf = await openZip(file);
+  try {
+    const names = new Map(); // lower case -> first spelling
+    for (const e of await readEntries(zf)) {
+      if (e.isDir) continue;
+      const parts = e.name.split('/');
+      const owner = tocOwner(parts[parts.length - 1]);
+      if (!owner) continue;
+      const folder = parts.length === 1 ? owner : parts[parts.length - 2];
+      if (folder.toLowerCase() === owner.toLowerCase() && !names.has(folder.toLowerCase())) names.set(folder.toLowerCase(), folder);
+    }
+    return [...names.values()];
+  } finally {
+    zf.close();
+  }
+}
+
+/**
  * Extract every file of the zip under `dest`.
  * @param {string} file @param {string} dest @returns {Promise<{ files: number, bytes: number }>}
  */

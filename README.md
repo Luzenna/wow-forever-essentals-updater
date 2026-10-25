@@ -31,6 +31,7 @@ What would you like to do?
 
   ► Install or update my addons    3 to install or update, 2.5 GB
     Choose which addons I want
+    Add or remove addons...
     See what's installed
     Settings
     Quit
@@ -38,6 +39,7 @@ What would you like to do?
 
 - **Install or update my addons** downloads only what changed, shows a progress bar per addon, and ends with a summary of what was updated and what failed.
 - **Choose which addons I want** is a checkbox list (arrows and Space, `a` for all/none, Enter to confirm, Esc to cancel). Choosing Spoken also asks whether to include the Zone and Book voices. Your choice is saved in the config, and addons you don't select are never touched.
+- **Add or remove addons...** adds any GitHub repo that publishes a release zip (see [Your own addons](#your-own-addons)), or uninstalls an addon.
 - **See what's installed** shows versions, status and download sizes in detail.
 - **Settings** sets the WoW AddOns folder (when several installs exist) and the Spoken voice language.
 - Without a keyboard-capable terminal the same lists take numbers instead.
@@ -51,6 +53,8 @@ wow-forever-essentals-updater update              install or update the selected
 wow-forever-essentals-updater status              installed vs latest for every item
 wow-forever-essentals-updater update --dry-run    show what would happen
 wow-forever-essentals-updater install --only nodesight
+wow-forever-essentals-updater add owner/name       add an addon from GitHub (see Your own addons)
+wow-forever-essentals-updater remove --only nodesight   uninstall an addon (settings are kept)
 wow-forever-essentals-updater detect              list the AddOns folders found
 wow-forever-essentals-updater clean               prune the download cache
 wow-forever-essentals-updater --lang frFR         also install the French Spoken voice packs
@@ -62,12 +66,14 @@ From source (needs Node 22+): `npm install`, then `npm start`.
 - the Spoken addon: the player plus its Quests, Zones and Books modules (folders `Spoken`, `Spoken_Quests`, `Spoken_Zones`, `Spoken_Books`, `SpokenContributions`)
 - the voice packs Spoken Quests Audio (the "All" bundle), Spoken Zones Audio and Spoken Books Audio
 
-**Item ids** (for `--only`): `spoken`, `quests-audio`, `zones-audio`, `books-audio`, `luzenna-forever`, `nodesight`, `dialogueui`. With a language set you also get `quests-audio-<lang>`, `zones-audio-<lang>` and `books-audio-<lang>`. `--only` can name an item you haven't selected.
+**Item ids** (for `--only`): `spoken`, `quests-audio`, `zones-audio`, `books-audio`, `luzenna-forever`, `nodesight`, `dialogueui`, and the id of any addon you added yourself. `remove --only` takes addon ids (`spoken` removes the addon and all its voice packs). With a language set you also get `quests-audio-<lang>`, `zones-audio-<lang>` and `books-audio-<lang>`. `--only` can name an item you haven't selected.
 
 **Flags:**
 - `--addons <path>`: use this AddOns folder.
 - `--yes`: never prompt (and skip the menu).
 - `--force`: install even while WoW is running.
+- `--pin <version>`: with `install --only <item>`, install that exact version and hold it there. This also rolls back a bad update. `--unpin` releases the hold. Status shows "held at 1.4.0".
+- `--overwrite-dev`: replace (or remove) a folder that looks like your own working copy; see below.
 - `--no-self-update`: skip the check for a newer version of this tool. Normally `update`, `install` and the menu first look at this tool's GitHub releases and, if a newer one exists, download it (sha256-checked, and test-run before use) and replace the executable; the new version takes effect on the next run. If anything fails it only prints a warning and carries on.
 - `--pause-on-exit`: keep the window open at the end.
 - `--verbose`: print more detail.
@@ -98,21 +104,23 @@ The first run copies `config.json` and `state.json` from the old `spoken-updater
 ```json
 {
   "addons_path": "",
-  "client_folder": "_classic_beta_",
+  "client_folder": "_forever_",
   "language": "enUS",
   "include_zones": true,
   "include_books": true,
   "github_token": "",
   "keep_downloads": false,
-  "selected": ["spoken", "luzenna-forever", "nodesight", "dialogueui"]
+  "selected": ["spoken", "luzenna-forever", "nodesight", "dialogueui"],
+  "pinned": {}
 }
 ```
 
-- `selected`: the addons to install and keep updated. The menu edits this.
-- `addons_path`: overrides detection. When several installs are found, the tool asks once and saves your choice here.
+- `selected`: the addons to install and keep updated, including the ids of addons you added. The menu edits this.
+- `addons_path`: overrides detection. If several WoW installs are found, the one in the `_forever_` client folder is used automatically. If more than one install has a `_forever_` folder, the tool asks once (Enter takes the first) and saves your choice here.
 - `client_folder`: the Forever client folder. Change it if Blizzard renames the folder at launch. Clients that report game version 1.60.x are detected regardless of folder name.
 - `include_zones` / `include_books`: the Spoken Zones and Books modules and their voice packs.
 - `github_token`: optional, only needed if you hit GitHub's rate limit of 60 requests an hour (one request per addon repo per run). Takes `WFE_GITHUB_TOKEN` or `GITHUB_TOKEN` from the environment too (`SPOKEN_GITHUB_TOKEN` still works).
+- `pinned`: addon item ids held at a version, e.g. `{ "nodesight": "1.4.0" }`. `install --only <id> --pin <version>` writes it.
 - `keep_downloads`: keep zips after a successful install. By default they are deleted to save space, but kept after a failure so a retry doesn't download them again.
 
 `state.json`, next to the config, records what was installed. Each folder's `.toc` is the source of truth. An item is reinstalled if:
@@ -120,6 +128,45 @@ The first run copies `config.json` and `state.json` from the old `spoken-updater
 - its file count or size changes by more than 10%.
 
 An addon you installed by hand is recognised by its folder name and updated in place.
+
+## Your own addons
+
+Any GitHub repo whose releases include a `.zip` of the addon folder can be added.
+
+- **From the menu:** *Add or remove addons...* > *Add an addon from GitHub*, then paste the repo address (`owner/name` or a github.com link). The tool looks at the latest release, reads which folders its zip would install, shows them, and asks before saving. Or from the command line: `add owner/name`.
+- **By hand:** edit `addons.json` in the config folder (next to `config.json`). It is plain JSON, so you can copy it to another computer or share it:
+
+```json
+{
+  "addons": [
+    {
+      "repo": "owner/name",
+      "folders": ["MyAddon", "MyAddon_Options"],
+      "title": "My Addon",
+      "id": "myaddon",
+      "blurb": "what it does",
+      "asset": "retail",
+      "letter_suffix": false
+    }
+  ]
+}
+```
+
+`repo` and `folders` are required. `id` defaults to the repo name in lower case, `title` to the repo name. `asset` is an optional pattern that picks the zip when a release has several (for example one per game version). `letter_suffix` is for authors who number rebuilds `1.0.5`, `1.0.5-b`, `1.0.5-c`. A hand-added addon shows up unticked in *Choose which addons I want*.
+
+How it is kept safe:
+- An addon may only write the folders listed in `folders`. Anything else in its zip is ignored.
+- `Blizzard_*` folders, and folders that Spoken or another addon already manages, are refused.
+- A mistake in the file never stops the tool: a broken entry is skipped with a message, and unreadable JSON is reported and left untouched.
+- Adding an addon means trusting its author. Only add addons from people you trust.
+
+Limits: plain `vX.Y.Z` release tags only, and the repo needs a GitHub release with a zip (not just tags or a branch). CurseForge and Wago are not supported.
+
+**Removing** an addon deletes the folders this tool installed for it (after asking), stops it being selected and, for an addon you added, takes it out of `addons.json`. Your settings in `WTF/` are kept, so reinstalling brings them back.
+
+**What's new:** when an update is available, the release notes' first few lines are shown before it installs.
+
+**Developer copies:** a folder that is a link to another folder, or has a `.git` folder inside, is treated as your own work in progress. It is shown as "developer copy" and never replaced or removed, unless you pass `--overwrite-dev`. A plain folder you edit in place is not detected: untick that addon in the menu while you work on it.
 
 ## Where things come from
 
@@ -177,7 +224,7 @@ The build bundles `src/` with esbuild into a Node [single executable application
 
 Console look and feel lives in `src/ui.js` (colours, symbols, banner) and `src/tui.js` (the lists); it all falls back to plain text off a terminal.
 
-To add an addon, add a group in `src/catalog.js` (`GROUPS` and `buildCatalog`); a single-folder addon released on plain tags is one `plainAddon(...)` call.
+To make an addon built in, add it to `BUILTIN` in `src/addons.js`; Spoken, which is several items, is the only special case, in `src/catalog.js`.
 
 ## Releases
 

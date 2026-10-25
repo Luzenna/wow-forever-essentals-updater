@@ -4,7 +4,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { ALL_GROUPS } from './catalog.js';
+import { BUILTIN_IDS } from './addons.js';
 
 export const APP = 'wow-forever-essentals-updater';
 /** This tool's earlier name; its config and state are carried over once. */
@@ -19,19 +19,21 @@ export const LEGACY_APP = 'spoken-updater';
  * @property {boolean} include_books
  * @property {string} github_token
  * @property {boolean} keep_downloads keep zips in the cache after a successful install
- * @property {string[]} selected      addon group ids to install and update (see GROUPS in catalog.js)
+ * @property {string[]} selected      addon group ids to install and update (built-in ids, plus ids from addons.json)
+ * @property {Record<string, string>} pinned  item id -> version to hold the addon at
  */
 
 /** @type {Config} */
 export const DEFAULT_CONFIG = {
   addons_path: '',
-  client_folder: '_classic_beta_',
+  client_folder: '_forever_',
   language: 'enUS',
   include_zones: true,
   include_books: true,
   github_token: '',
   keep_downloads: false,
-  selected: ALL_GROUPS,
+  selected: BUILTIN_IDS,
+  pinned: {},
 };
 
 /**
@@ -88,6 +90,7 @@ function readJson(file) {
     return JSON.parse(fs.readFileSync(file, 'utf8'));
   } catch (e) {
     if (/** @type {NodeJS.ErrnoException} */ (e).code === 'ENOENT') return null;
+    if (e instanceof SyntaxError) throw new Error(`${file} is not valid JSON. Fix it, or delete it to start fresh.`);
     throw new Error(`cannot read ${file}: ${/** @type {Error} */ (e).message}`);
   }
 }
@@ -113,8 +116,9 @@ export function writeJsonAtomic(file, data) {
 export function loadConfig(dir) {
   const raw = readJson(path.join(dir, 'config.json')) ?? {};
   const cfg = { ...DEFAULT_CONFIG, ...raw };
-  // Never share the default array, and drop ids from a hand-edited or older config that no longer exist.
-  cfg.selected = (Array.isArray(cfg.selected) ? cfg.selected : ALL_GROUPS).filter((g) => ALL_GROUPS.includes(g));
+  // Never share the default array. Ids are kept even when unknown here: custom addons come from addons.json.
+  cfg.selected = (Array.isArray(cfg.selected) ? cfg.selected : BUILTIN_IDS).filter((g) => typeof g === 'string');
+  cfg.pinned = cfg.pinned && typeof cfg.pinned === 'object' && !Array.isArray(cfg.pinned) ? { ...cfg.pinned } : {};
   return cfg;
 }
 

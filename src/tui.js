@@ -147,3 +147,6 @@ export async function choose(title, options, io) {
 export function checklist(title, options, io) {
   return hasKeys(io) ? interactive(title, options, true, io) : numbered(title, options, true, io);
 }
+
+/** The real keyboard and screen. @param {(question: string) => Promise<string>} ask @returns {IO} */
+export const stdIO = (ask) => ({ input: process.stdin, output: process.stdout, ask });

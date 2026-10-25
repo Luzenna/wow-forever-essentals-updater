@@ -70,3 +70,18 @@ export function linuxProcesses(proc = '/proc') {
   }
   return [...found];
 }
+
+/**
+ * Whether an addon folder looks like someone's work in progress: a link (the usual way to
+ * develop an addon from a repo checkout) or a folder with its own .git. Returns why, or null.
+ * @param {string} addons @param {string} name  folder name inside AddOns
+ */
+export function devCopyReason(addons, name) {
+  const dir = path.join(addons, name);
+  try {
+    if (fs.lstatSync(dir).isSymbolicLink()) return 'is a link to another folder';
+  } catch {
+    return null; // not there
+  }
+  return fs.existsSync(path.join(dir, '.git')) ? 'has a .git folder' : null;
+}

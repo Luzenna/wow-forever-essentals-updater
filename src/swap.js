@@ -131,7 +131,8 @@ export function swapIn(opts) {
     try {
       move({ kind: 'backup', from, to });
     } catch (e) {
-      if (!isBusy(e)) throw e;
+      // A link would be emptied through, which is the checkout it points at: never do that.
+      if (!isBusy(e) || fs.lstatSync(from).isSymbolicLink()) throw e;
       j.moves.pop(); // that rename did not happen
       writeJournal(workDir, j);
       fs.mkdirSync(to, { recursive: true });

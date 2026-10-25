@@ -30,6 +30,12 @@ import { findChild, resolveFold } from './fold.js';
  * @property {boolean} forever   confirmed Forever (1.60.x) by product.db or .build.info
  */
 
+/** The client folder the Forever launcher creates. It is always looked at, whatever client_folder says. */
+export const FOREVER_FOLDER = '_forever_';
+
+/** Whether a candidate is in the _forever_ client folder. @param {Candidate} c */
+export const isForeverFolder = (c) => path.basename(c.clientDir).toLowerCase() === FOREVER_FOLDER;
+
 /** @returns {Env} */
 export function realEnv() {
   const platform = process.platform === 'win32' ? 'win32' : 'linux';
@@ -251,7 +257,7 @@ function findRoots(env) {
 }
 
 /**
- * Candidate AddOns folders, Forever-confirmed ones first.
+ * Candidate AddOns folders: Forever-confirmed ones first, and within those the _forever_ client folder.
  * @param {{ clientFolder: string }} opts @param {Env} [env] @returns {Candidate[]}
  */
 export function detect(opts, env = realEnv()) {
@@ -259,9 +265,9 @@ export function detect(opts, env = realEnv()) {
   const out = new Map();
   for (const r of findRoots(env)) {
     const folders = new Map([...r.clients].filter(([, v]) => isForeverVersion(v)));
-    // The configured client folder is always tried, so a renamed launch folder
-    // works without a new release of this tool.
-    if (!folders.has(opts.clientFolder)) folders.set(opts.clientFolder, r.clients.get(opts.clientFolder) ?? null);
+    // _forever_ is always tried, and so is the configured client folder, so a renamed
+    // launch folder works without a new release of this tool.
+    for (const f of [FOREVER_FOLDER, opts.clientFolder]) if (!folders.has(f)) folders.set(f, r.clients.get(f) ?? null);
     for (const [folder, version] of folders) {
       const client = resolveFold(r.root, folder);
       if (!client.exists) continue;
@@ -271,5 +277,5 @@ export function detect(opts, env = realEnv()) {
       out.set(key, { addons: addons.path, exists: addons.exists, clientDir: client.path, label: r.label, version, forever: isForeverVersion(version) });
     }
   }
-  return [...out.values()].sort((a, b) => Number(b.forever) - Number(a.forever));
+  return [...out.values()].sort((a, b) => Number(b.forever) - Number(a.forever) || Number(isForeverFolder(b)) - Number(isForeverFolder(a)));
 }

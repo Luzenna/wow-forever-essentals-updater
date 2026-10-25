@@ -117,7 +117,7 @@ function setup(cfg = {}) {
 test('menu: select addons saves the selection, exit ends the loop', async () => {
   const { configDir, deps } = setup();
   // main menu: 2 = Select addons; checklist: toggle 1 (Spoken off) and 3 (NodeSight off), confirm; main menu: 5 = Exit.
-  const s = scripted(['2', '1 3', '', '5']);
+  const s = scripted(['2', '1 3', '', '6']);
   assert.equal(await runMenu({}, deps, s.io), 0);
   assert.deepEqual(loadConfig(configDir).selected, ['luzenna-forever', 'dialogueui']);
   assert.equal(s.left(), 0);
@@ -126,7 +126,7 @@ test('menu: select addons saves the selection, exit ends the loop', async () => 
 test('menu: Spoken asks which audio packs, and the answers are saved', async () => {
   const { configDir, deps } = setup();
   // Select addons, keep all four, then toggle Zones audio off; Exit.
-  const s = scripted(['2', '', '1', '', '5']);
+  const s = scripted(['2', '', '1', '', '6']);
   await runMenu({}, deps, s.io);
   const cfg = loadConfig(configDir);
   assert.equal(cfg.include_zones, false);
@@ -139,7 +139,7 @@ test('menu: backing out of a list changes nothing, and a failing item does not c
   const before = loadConfig(configDir);
   const failing = { ...deps, source: { name: 'Fake', latest: async () => { throw new Error('offline'); } }, configDir };
   // Select addons -> q; Status (3) lists the per-item errors; Update (1) fails; each waits for Enter; Exit.
-  const s = scripted(['2', 'q', '3', '', '1', '', '5']);
+  const s = scripted(['2', 'q', '4', '', '1', '', '6']);
   const code = await runMenu({ yes: true }, failing, s.io);
   assert.deepEqual(loadConfig(configDir), before);
   assert.equal(code, 1, 'the failed update is reflected in the exit code');
@@ -148,7 +148,7 @@ test('menu: backing out of a list changes nothing, and a failing item does not c
 
 test('no command: a terminal gets the menu, --yes or a pipe gets update', async () => {
   const { deps } = setup({ selected: [] });
-  const asked = scripted(['5']);
+  const asked = scripted(['6']);
   assert.equal(await main([], { interactive: true, deps, io: asked.io }), 0);
   assert.equal(asked.asked.length, 1, 'the menu was shown');
 
