@@ -10,6 +10,7 @@
  * @property {string} blurb
  * @property {string} [repo]         GitHub "owner/name" (unset for an addon that comes from Wago)
  * @property {string} [wago]         Wago Addons slug ("baganator" in addons.wago.io/addons/baganator), instead of a repo
+ * @property {import('./sources/fixed.js').FixedFile} [url]  one exact file at a fixed URL, instead of a repo (see sources/fixed.js)
  * @property {string[]} folders      the AddOns folders this addon owns, and the only ones it may write
  * @property {boolean} [letterSuffix] tags like 1.0.5-f are later builds of 1.0.5, not prereleases
  * @property {string} [asset]        regex that picks the zip when a release has several
@@ -35,6 +36,19 @@ export const BUILTIN = [
   { id: 'journalator', title: 'Journalator', blurb: 'auction, crafting, quest and loot statistics (works with Auctionator)', wago: 'journalator', folders: ['Journalator', 'Journalator_Display', 'Journalator_OptionsUI', 'Journalator_Statistics'], optIn: true },
   { id: 'chattynator', title: 'Chattynator', blurb: 'chat window replacement', wago: 'chattynator', folders: ['Chattynator'], optIn: true },
   { id: 'platynator', title: 'Platynator', blurb: 'configurable nameplates', wago: 'platynator', folders: ['Platynator'], optIn: true },
+  // TEMPORARY: only on CurseForge, and its author (Zerkaa) has switched off third-party downloads there, so
+  // there is no source to ask. This pins the one file below (size and sha256 checked) and never updates
+  // by itself. Replace with a real source if the author allows it. See src/sources/fixed.js.
+  {
+    id: 'whatstraining', title: "What's Training", blurb: 'every spell your class can learn, with trainer prices (fixed version 1.1.1)', folders: ['WhatsTraining'], optIn: true,
+    url: { version: '1.1.1', href: 'https://mediafilez.forgecdn.net/files/9050/658/WhatsTraining-1.1.1.zip', size: 57758, sha256: '687f2b648afb3795e5b5651af05f2ac6af9355ed42114fe319fd77121668d0ab' },
+  },
+  {
+    id: 'enhanceqol', title: 'Enhance QoL', blurb: 'many small quality-of-life options in one addon (17 folders)', wago: 'eqol', optIn: true,
+    folders: ['EnhanceQoL', 'EnhanceQoLBags', 'EnhanceQoLChatSocial', 'EnhanceQoLClassBuffReminder', 'EnhanceQoLCooldownPanels', 'EnhanceQoLCooldownPulse', 'EnhanceQoLDamageMeter',
+      'EnhanceQoLDungeonRaid', 'EnhanceQoLMover', 'EnhanceQoLQuickActions', 'EnhanceQoLResourceBars', 'EnhanceQoLSharedMedia', 'EnhanceQoLSkinner', 'EnhanceQoLSound',
+      'EnhanceQoLTooltip', 'EnhanceQoLUnitFrames', 'EnhanceQoLVendor'],
+  },
 ];
 
 /** Group ids that are always known: Spoken plus the built-in addons. */

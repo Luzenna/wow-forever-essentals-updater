@@ -20,6 +20,8 @@ Optional extras, unticked until you pick them in *Choose which addons I want*:
 | **Journalator** | auction, crafting, quest and loot statistics | [Wago Addons](https://addons.wago.io/addons/journalator) |
 | **Chattynator** | chat window replacement | [Wago Addons](https://addons.wago.io/addons/chattynator) |
 | **Platynator** | configurable nameplates | [Wago Addons](https://addons.wago.io/addons/platynator) |
+| **Enhance QoL** | many small quality-of-life options in one addon (17 folders, about 16 MB) | [Wago Addons](https://addons.wago.io/addons/eqol) |
+| **What's Training** | every spell your class can learn, with trainer prices | [CurseForge](https://www.curseforge.com/wow/addons/whats-training-forever), fixed version only (see below) |
 
 It downloads only what changed. If everything is already current, it downloads nothing and changes no files.
 
@@ -188,7 +190,7 @@ Limits: for GitHub, plain `vX.Y.Z` release tags only, and the repo needs a GitHu
 
 ## Where things come from
 
-Almost everything comes from GitHub Releases, one repo per addon. The exceptions are Baganator, Syndicator, Auctionator, Journalator, Chattynator and Platynator, which are not released on GitHub and come from [Wago Addons](https://addons.wago.io) (see below).
+Almost everything comes from GitHub Releases, one repo per addon. The exceptions are Baganator, Syndicator, Auctionator, Journalator, Chattynator, Platynator and Enhance QoL, which are not released on GitHub and come from [Wago Addons](https://addons.wago.io) (see below).
 
 **Spoken** uses one tag prefix per item:
 
@@ -225,7 +227,9 @@ every line would be voiced twice. Upstream's empty placeholder folders (e.g. the
 - This depends on how Wago's page is built. If Wago changes it, the affected addons fail with a message saying so, and the rest carry on.
 - Wago's `robots.txt` asks automated clients to stay out of `/download/`. To learn a zip's size this tool sends one small HEAD request (no file) to that path per Wago addon each time it checks, plus one page request; the zip itself comes from Wago's CDN. Only addons you have selected are checked. Don't select more than you use.
 
-Sources plug in through `src/sources/source.js`; `src/sources/wago.js` is the Wago one.
+**What's Training (temporary).** It is only on CurseForge, and its author has switched off third-party downloads there, so there is no source to ask for new releases. For now the tool installs one fixed file, version 1.1.1, from a fixed URL, and checks it against a recorded size and sha256. It does not look for newer versions: when the author releases one, the entry in `src/addons.js` has to be updated by hand. This is a stop-gap until the author allows third-party downloads or publishes GitHub releases.
+
+Sources plug in through `src/sources/source.js`; `src/sources/wago.js` is the Wago one and `src/sources/fixed.js` the fixed-URL one.
 
 ## How it installs safely
 

@@ -20,6 +20,7 @@ import { SPOKEN, BUILTIN, BUILTIN_IDS } from './addons.js';
  * @property {string} group         addon group id (see GROUPS); what the menu selects
  * @property {string} [repo]        GitHub "owner/name" the releases come from (unset for a Wago addon)
  * @property {string} [wago]        Wago Addons slug the releases come from, instead of a GitHub repo
+ * @property {import('./sources/fixed.js').FixedFile} [url]  one exact file at a fixed URL, instead of a repo or Wago
  * @property {boolean} [loose]      versions may be bare build numbers ("839"), compared as 839.0.0
  * @property {'prefix' | 'plain'} tagMode  "<tagPrefix>/<version>" tags, or the whole tag is the version
  * @property {string} [tagPrefix]   prefix mode only
@@ -88,7 +89,7 @@ const spokenPack = (id, title, kind, optional = false) => ({
 const plainAddon = (a) => {
   const mine = new Set(a.folders.map((f) => f.toLowerCase()));
   return {
-    id: a.id, group: a.id, repo: a.repo, wago: a.wago, loose: !!a.wago, tagMode: 'plain', assetPrefix: a.folders[0], letterSuffix: a.letterSuffix, cacheKey: a.id,
+    id: a.id, group: a.id, repo: a.repo, wago: a.wago, url: a.url, loose: !!a.wago, tagMode: 'plain', assetPrefix: a.folders[0], letterSuffix: a.letterSuffix, cacheKey: a.id,
     kind: 'addon', title: a.title, optional: false, folders: a.folders, owns: (n) => mine.has(n.toLowerCase()),
     assetPattern: a.asset ? new RegExp(a.asset, 'i') : undefined,
   };

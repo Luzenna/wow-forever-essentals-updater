@@ -48,7 +48,12 @@ async function fakeWago(addons) {
       if (req.method === 'HEAD') stats.heads++;
       res.writeHead(302, { Location: `/cdn/${dl[1]}-${addons[dl[1]].label}.zip` }).end();
     } else if (cdn) {
-      const slug = cdn[1].replace(/-[^-]+$/, '');
+      // File names are "<slug>-<label>.zip", and a label can itself contain dashes ("13.16.2-forever").
+      const slug = Object.keys(addons).find((s) => cdn[1].startsWith(`${s}-`));
+      if (!slug) {
+        res.writeHead(404).end();
+        return;
+      }
       const body = zipFor(slug);
       if (req.method !== 'HEAD') stats.zipGets++;
       res.writeHead(200, { 'Content-Type': 'application/zip', 'Content-Length': body.length }).end(req.method === 'HEAD' ? undefined : body);
@@ -110,6 +115,19 @@ test('WagoSource finds the zip, its size and its notes with one page request and
   }
 });
 
+test('a "-forever" label suffix is the flavor, not part of the version', async () => {
+  const w = await fakeWago({ eqol: { folders: ['EnhanceQoL'], label: '13.16.2-forever' } });
+  try {
+    const src = new WagoSource({ base: w.url, retry: { retries: 0 } });
+    const rel = await src.latest(wagoItem('enhanceqol', 'eqol'));
+    assert.equal(rel?.version, '13.16.2', 'matches the .toc Version');
+    assert.equal(rel?.tag, '13.16.2-forever', 'the tag keeps what Wago called it');
+    assert.equal((await src.latest({ ...wagoItem('enhanceqol', 'eqol'), pin: '13.16.2-forever' }))?.version, '13.16.2');
+  } finally {
+    await w.close();
+  }
+});
+
 test('WagoSource: no forever build is "no release", an unknown addon and a pin are plain errors', async () => {
   const w = await fakeWago({ old: { folders: ['Old'], label: '3', noForever: true }, baganator: { folders: ['Baganator'], label: '839' } });
   try {
@@ -157,7 +175,7 @@ test('an addon that needs another brings it, and nothing else', () => {
 
 test('a fresh config leaves the opt-in extras off, and the extras are all there', () => {
   assert.deepEqual(DEFAULT_CONFIG.selected, DEFAULT_SELECTED);
-  for (const id of ['dialogkey', 'syndicator', 'baganator', 'auctionator', 'journalator', 'chattynator', 'platynator']) {
+  for (const id of ['dialogkey', 'syndicator', 'baganator', 'auctionator', 'journalator', 'chattynator', 'platynator', 'enhanceqol']) {
     assert.ok(BUILTIN.some((a) => a.id === id), id);
     assert.ok(!DEFAULT_SELECTED.includes(id), `${id} is opt-in`);
   }
@@ -166,16 +184,16 @@ test('a fresh config leaves the opt-in extras off, and the extras are all there'
 
 test('addons.json accepts a Wago addon by slug, and refuses a muddle', () => {
   const { entries, problems } = validate([
-    { wago: 'Whats-Training', folders: ['WhatsTraining'] },
+    { wago: 'Some-Addon', folders: ['SomeAddon'] },
     { wago: 'both', repo: 'a/b', folders: ['Both'] },
     { wago: 'bad slug!', folders: ['Bad'] },
     { folders: ['Nothing'] },
   ]);
   assert.equal(entries.length, 1);
-  assert.equal(entries[0].id, 'whats-training');
-  assert.equal(entries[0].wago, 'whats-training');
+  assert.equal(entries[0].id, 'some-addon');
+  assert.equal(entries[0].wago, 'some-addon');
   assert.equal(entries[0].repo, undefined);
-  assert.equal(entries[0].title, 'whats-training');
+  assert.equal(entries[0].title, 'some-addon');
   assert.match(problems[0], /either "repo" or "wago"/);
   assert.match(problems[1], /addons\.wago\.io address/);
   assert.match(problems[2], /"repo" must look like owner\/name/);

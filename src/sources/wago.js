@@ -93,10 +93,12 @@ export class WagoSource {
     const r = await this.#release(slug);
     if (!r?.label || !r.download_link) return null;
 
-    const version = r.label.trim().replace(/^v(?=\d)/i, '');
+    // "v1.2.62" -> 1.2.62, and "13.16.2-forever" -> 13.16.2 (the flavor name is not part of the version the .toc carries).
+    const clean = (/** @type {string} */ s) => s.trim().replace(/^v(?=\d)/i, '').replace(/-forever$/i, '');
+    const version = clean(r.label);
     if (!semver.valid(version, { loose: true })) throw new Error(`${slug} on Wago: version "${r.label}" is not a version number`);
     // Wago's page only ever offers the newest release.
-    if (item.pin && semver.compare(item.pin.replace(/^v(?=\d)/i, ''), version, { loose: true }) !== 0) {
+    if (item.pin && semver.compare(clean(item.pin), version, { loose: true }) !== 0) {
       throw new Error(`Wago only offers the newest ${slug} (${version}), so ${item.pin} cannot be pinned`);
     }
 

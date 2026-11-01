@@ -3,6 +3,7 @@
 // Wago Addons. One GitHubSource per repo, so each repo's release list is fetched once per run.
 import { GitHubSource } from './github.js';
 import { WagoSource } from './wago.js';
+import { fixedRelease } from './fixed.js';
 
 export class MultiSource {
   name = 'GitHub';
@@ -16,7 +17,8 @@ export class MultiSource {
   }
 
   /** @param {import('../catalog.js').Item} item @returns {Promise<import('./source.js').Release | null>} */
-  latest(item) {
+  async latest(item) {
+    if (item.url) return fixedRelease(item);
     if (item.wago) return this.wago.latest(item);
     const repo = item.repo ?? '';
     let s = this.sources.get(repo);
