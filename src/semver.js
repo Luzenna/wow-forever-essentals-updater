@@ -6,10 +6,13 @@ const RE = /^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/;
 // Some addons number rebuilds 1.0.5, 1.0.5-b, 1.0.5-c ...: a single letter after the
 // dash is a later build of the same version, not a prerelease (opt in with { letters: true }).
 const LETTER_RE = /^v?(\d+)\.(\d+)\.(\d+)-([a-z])$/;
+// Some addons number releases with a bare build number ("839") or two parts ("1.2"):
+// with { loose: true } the missing parts count as 0, so 839 -> 839.0.0.
+const LOOSE_RE = /^v?(\d+)(?:\.(\d+))?(?:\.(\d+))?$/;
 
 /**
  * @typedef {{ major: number, minor: number, patch: number, pre: string[], letter: string }} SemVer
- * @typedef {{ letters?: boolean }} ParseOptions
+ * @typedef {{ letters?: boolean, loose?: boolean }} ParseOptions
  */
 
 /** @param {string} s @param {ParseOptions} [o] @returns {SemVer | null} */
@@ -20,7 +23,10 @@ export function parse(s, o = {}) {
     if (l) return { major: +l[1], minor: +l[2], patch: +l[3], pre: [], letter: l[4] };
   }
   const m = RE.exec(text);
-  if (!m) return null;
+  if (!m) {
+    const l = o.loose ? LOOSE_RE.exec(text) : null;
+    return l ? { major: +l[1], minor: +(l[2] ?? 0), patch: +(l[3] ?? 0), pre: [], letter: '' } : null;
+  }
   return { major: +m[1], minor: +m[2], patch: +m[3], pre: m[4] ? m[4].split('.') : [], letter: '' };
 }
 

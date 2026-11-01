@@ -18,7 +18,9 @@ import { SPOKEN, BUILTIN, BUILTIN_IDS } from './addons.js';
  * @typedef {object} Item
  * @property {string} id
  * @property {string} group         addon group id (see GROUPS); what the menu selects
- * @property {string} repo          GitHub "owner/name" the releases come from
+ * @property {string} [repo]        GitHub "owner/name" the releases come from (unset for a Wago addon)
+ * @property {string} [wago]        Wago Addons slug the releases come from, instead of a GitHub repo
+ * @property {boolean} [loose]      versions may be bare build numbers ("839"), compared as 839.0.0
  * @property {'prefix' | 'plain'} tagMode  "<tagPrefix>/<version>" tags, or the whole tag is the version
  * @property {string} [tagPrefix]   prefix mode only
  * @property {string} [assetPrefix] asset name stem ("NodeSight" -> NodeSight-1.4.1.zip); defaults to tagPrefix
@@ -39,11 +41,29 @@ import { SPOKEN, BUILTIN, BUILTIN_IDS } from './addons.js';
  */
 
 /**
+ * The ids plus everything they need to work (Baganator brings Syndicator), without duplicates.
+ * @param {string[]} ids @param {import('./addons.js').AddonEntry[]} entries
+ */
+export function withRequired(ids, entries) {
+  const byId = new Map(entries.map((a) => [a.id, a]));
+  const out = new Set(ids);
+  const todo = [...out];
+  for (let id = todo.pop(); id !== undefined; id = todo.pop()) {
+    for (const r of byId.get(id)?.requires ?? []) {
+      if (out.has(r)) continue;
+      out.add(r);
+      todo.push(r);
+    }
+  }
+  return [...out];
+}
+
+/**
  * Addon groups in menu order: Spoken, the built-in addons, then the user's own.
  * @param {import('./addons.js').AddonEntry[]} [custom] @returns {Group[]}
  */
 export function listGroups(custom = []) {
-  return [SPOKEN, ...BUILTIN, ...custom].map((a) => ({ id: a.id, title: a.title, blurb: a.blurb, repo: a.repo, custom: 'custom' in a && !!a.custom }));
+  return [SPOKEN, ...BUILTIN, ...custom].map((a) => ({ id: a.id, title: a.title, blurb: a.blurb, repo: a.repo ?? '', custom: 'custom' in a && !!a.custom }));
 }
 /** Ids of the groups that ship with the tool. */
 export const ALL_GROUPS = BUILTIN_IDS;
@@ -68,7 +88,7 @@ const spokenPack = (id, title, kind, optional = false) => ({
 const plainAddon = (a) => {
   const mine = new Set(a.folders.map((f) => f.toLowerCase()));
   return {
-    id: a.id, group: a.id, repo: a.repo, tagMode: 'plain', assetPrefix: a.folders[0], letterSuffix: a.letterSuffix, cacheKey: a.id,
+    id: a.id, group: a.id, repo: a.repo, wago: a.wago, loose: !!a.wago, tagMode: 'plain', assetPrefix: a.folders[0], letterSuffix: a.letterSuffix, cacheKey: a.id,
     kind: 'addon', title: a.title, optional: false, folders: a.folders, owns: (n) => mine.has(n.toLowerCase()),
     assetPattern: a.asset ? new RegExp(a.asset, 'i') : undefined,
   };
@@ -80,7 +100,7 @@ const plainAddon = (a) => {
  */
 export function buildCatalog(opts) {
   const plain = [...BUILTIN, ...(opts.custom ?? [])];
-  const selected = new Set(opts.selected ?? [SPOKEN.id, ...plain.map((a) => a.id)]);
+  const selected = new Set(withRequired(opts.selected ?? [SPOKEN.id, ...plain.map((a) => a.id)], plain));
   /** @type {Item[]} */
   const items = [];
   if (selected.has(SPOKEN.id)) {

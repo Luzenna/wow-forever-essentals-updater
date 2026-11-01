@@ -1,6 +1,6 @@
 // @ts-check
-// The contract every release source implements. GitHub is the only one today;
-// a Wago source (needs a personal API key) can be added as another file.
+// The contract every release source implements: GitHub (github.js) and Wago Addons
+// (wago.js, for addons that are not released on GitHub). multi.js picks one per item.
 
 /**
  * @typedef {object} Asset

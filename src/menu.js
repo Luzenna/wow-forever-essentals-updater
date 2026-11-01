@@ -4,7 +4,8 @@
 // the commands use; the menu only chooses what to run and keeps the config in step
 // with what the user ticks.
 import * as log from './log.js';
-import { listGroups, isLanguageCode } from './catalog.js';
+import { listGroups, isLanguageCode, withRequired } from './catalog.js';
+import { BUILTIN } from './addons.js';
 import { loadConfig, saveConfig, loadState, stateKey } from './config.js';
 import { loadCustom } from './custom.js';
 import { addFromGitHub } from './addrepo.js';
@@ -124,7 +125,9 @@ async function selectAddons(deps, io) {
   // Ids this tool doesn't list (an addons.json entry that was removed) are dropped here.
   // If addons.json could not be read, its addons are not listed here: keep them selected rather than dropping them.
   const unlisted = problems.length ? cfg.selected.filter((id) => !GROUPS.some((g) => g.id === id)) : [];
-  const next = { ...cfg, selected: [...GROUPS.map((g) => g.id).filter((id) => picked.includes(id)), ...unlisted] };
+  // An addon that cannot work alone brings what it needs (Baganator -> Syndicator).
+  const chosen = withRequired(picked, [...BUILTIN, ...entries]);
+  const next = { ...cfg, selected: [...GROUPS.map((g) => g.id).filter((id) => chosen.includes(id)), ...unlisted] };
   if (next.selected.includes('spoken')) {
     const parts = await checklist('Spoken voice packs (the addon and the quest voices are always included)', [
       { value: 'zones', label: 'Zone voices', hint: 'about 470 MB', checked: cfg.include_zones },

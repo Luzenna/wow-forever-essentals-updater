@@ -9,6 +9,18 @@ Installs and updates the essential addons for **World of Warcraft: Forever** (1.
 | **NodeSight** | herb and ore names on the minimap | [Krelock/NodeSight](https://github.com/Krelock/NodeSight) |
 | **Dialogue UI** | quest and gossip dialogue window | [Peterodox/YUI-Dialogue](https://github.com/Peterodox/YUI-Dialogue) |
 
+Optional extras, unticked until you pick them in *Choose which addons I want*:
+
+| Addon | What it is | Source |
+|---|---|---|
+| **DialogKey** | space bar accepts quests and gossip options | [NumyAddon/DialogKey_Numy](https://github.com/NumyAddon/DialogKey_Numy) |
+| **Baganator** | bags and bank, one window or by category (brings Syndicator along) | [Wago Addons](https://addons.wago.io/addons/baganator) |
+| **Syndicator** | item data across your characters, which Baganator needs | [Wago Addons](https://addons.wago.io/addons/syndicator) |
+| **Auctionator** | a faster, friendlier auction house | [Wago Addons](https://addons.wago.io/addons/auctionator) |
+| **Journalator** | auction, crafting, quest and loot statistics | [Wago Addons](https://addons.wago.io/addons/journalator) |
+| **Chattynator** | chat window replacement | [Wago Addons](https://addons.wago.io/addons/chattynator) |
+| **Platynator** | configurable nameplates | [Wago Addons](https://addons.wago.io/addons/platynator) |
+
 It downloads only what changed. If everything is already current, it downloads nothing and changes no files.
 
 ## Use
@@ -160,7 +172,13 @@ How it is kept safe:
 - A mistake in the file never stops the tool: a broken entry is skipped with a message, and unreadable JSON is reported and left untouched.
 - Adding an addon means trusting its author. Only add addons from people you trust.
 
-Limits: plain `vX.Y.Z` release tags only, and the repo needs a GitHub release with a zip (not just tags or a branch). CurseForge and Wago are not supported.
+**An addon that is only on Wago Addons** can be added by hand with `wago` (the name in its `addons.wago.io/addons/<name>` address) instead of `repo`:
+
+```json
+{ "addons": [ { "wago": "some-addon", "folders": ["SomeAddon"] } ] }
+```
+
+Limits: for GitHub, plain `vX.Y.Z` release tags only, and the repo needs a GitHub release with a zip (not just tags or a branch). For Wago, only the newest release can be installed (no pinning). CurseForge is not supported.
 
 **Removing** an addon deletes the folders this tool installed for it (after asking), stops it being selected and, for an addon you added, takes it out of `addons.json`. Your settings in `WTF/` are kept, so reinstalling brings them back.
 
@@ -170,7 +188,7 @@ Limits: plain `vX.Y.Z` release tags only, and the repo needs a GitHub release wi
 
 ## Where things come from
 
-Everything comes from GitHub Releases, one repo per addon.
+Almost everything comes from GitHub Releases, one repo per addon. The exceptions are Baganator, Syndicator, Auctionator, Journalator, Chattynator and Platynator, which are not released on GitHub and come from [Wago Addons](https://addons.wago.io) (see below).
 
 **Spoken** uses one tag prefix per item:
 
@@ -200,7 +218,14 @@ removes those old folders in the same transaction; otherwise both generations wo
 every line would be voiced twice. Upstream's empty placeholder folders (e.g. the new
 `SpokenPlayer`, "now Spoken") are never installed.
 
-Sources plug in through `src/sources/source.js`. A Wago source is possible, but Wago's API needs a personal API key.
+**Wago Addons.** Wago has no public download API (its documented API is for uploading releases and needs a key), so this tool reads what the public addon page itself carries: the newest release for the Forever game flavor, with its version, changelog and download link. It follows the link once to find the zip and its size, then downloads it like any other. Things to know:
+- Wago publishes no sha256, so these downloads are checked by size only (the zip is still validated when it is unpacked).
+- Versions are often bare build numbers (`839`); they are compared as numbers, and a newer installed copy is never replaced.
+- Only the newest release is offered, so `--pin` does not work for these addons.
+- This depends on how Wago's page is built. If Wago changes it, the affected addons fail with a message saying so, and the rest carry on.
+- Wago's `robots.txt` asks automated clients to stay out of `/download/`. To learn a zip's size this tool sends one small HEAD request (no file) to that path per Wago addon each time it checks, plus one page request; the zip itself comes from Wago's CDN. Only addons you have selected are checked. Don't select more than you use.
+
+Sources plug in through `src/sources/source.js`; `src/sources/wago.js` is the Wago one.
 
 ## How it installs safely
 

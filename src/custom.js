@@ -43,12 +43,18 @@ export function validate(list) {
 
   list.forEach((raw, i) => {
     const e = /** @type {Record<string, any>} */ (raw && typeof raw === 'object' ? raw : {});
-    const label = `${ADDONS_FILE} entry ${i + 1}${typeof e.repo === 'string' ? ` (${e.repo})` : ''}`;
+    const label = `${ADDONS_FILE} entry ${i + 1}${typeof e.repo === 'string' ? ` (${e.repo})` : typeof e.wago === 'string' ? ` (wago ${e.wago})` : ''}`;
     /** @param {string} why */
     const skip = (why) => problems.push(`${label} skipped: ${why}`);
 
-    const repo = typeof e.repo === 'string' ? parseRepo(e.repo) : null;
-    if (!repo) return skip('"repo" must look like owner/name or a github.com address');
+    // Released on GitHub ("repo"), or only on Wago Addons ("wago": the slug in addons.wago.io/addons/<slug>).
+    const wago = typeof e.wago === 'string' ? e.wago.trim().toLowerCase() : undefined;
+    if (wago !== undefined) {
+      if (e.repo !== undefined) return skip('use either "repo" or "wago", not both');
+      if (!/^[a-z0-9][a-z0-9-]*$/.test(wago)) return skip('"wago" must be the addon name from its addons.wago.io address, e.g. "baganator"');
+    }
+    const repo = wago !== undefined ? undefined : typeof e.repo === 'string' ? parseRepo(e.repo) : null;
+    if (repo === null) return skip('"repo" must look like owner/name or a github.com address (or give "wago" instead)');
     const folders = Array.isArray(e.folders) ? e.folders : null;
     if (!folders?.length) return skip('"folders" must list the addon folder names to install, e.g. ["MyAddon"]');
     const badFolder = folders.find((f) => !isFolderName(f));
@@ -61,7 +67,7 @@ export function validate(list) {
       return skip(owner?.builtin && owner.who.toLowerCase() === clash.toLowerCase() ? `${clash} is already built into this tool` : `${clash} is already managed by ${owner?.who}`);
     }
 
-    const id = typeof e.id === 'string' && e.id ? e.id : slug(repo);
+    const id = typeof e.id === 'string' && e.id ? e.id : wago ?? slug(/** @type {string} */ (repo));
     if (!/^[a-z0-9][a-z0-9-]*$/.test(id)) return skip(`id "${id}" may only use lower-case letters, digits and dashes`);
     if (ids.has(id) || /^(quests|zones|books)-audio/.test(id)) return skip(`id "${id}" is already in use; give it a different "id"`);
     if (e.asset !== undefined) {
@@ -75,8 +81,8 @@ export function validate(list) {
     ids.add(id);
     for (const f of folders) taken.set(f.toLowerCase(), { who: String(e.title ?? id) });
     entries.push({
-      id, repo, folders: [...folders], title: typeof e.title === 'string' && e.title ? e.title : repo.split('/')[1],
-      blurb: typeof e.blurb === 'string' && e.blurb ? e.blurb : repo,
+      id, repo, wago, folders: [...folders], title: typeof e.title === 'string' && e.title ? e.title : repo?.split('/')[1] ?? /** @type {string} */ (wago),
+      blurb: typeof e.blurb === 'string' && e.blurb ? e.blurb : repo ?? `${wago} on Wago Addons`,
       asset: e.asset === undefined ? undefined : String(e.asset), letterSuffix: !!e.letter_suffix, custom: true,
     });
   });
@@ -137,6 +143,6 @@ export function checkNew(configDir, entry) {
 export function removeCustom(configDir, id) {
   const doc = readDoc(configDir);
   if (doc.error) throw new Error(doc.error);
-  const keep = doc.addons.filter((/** @type {any} */ e) => (typeof e?.id === 'string' && e.id ? e.id : slug(String(e?.repo ?? ''))) !== id);
+  const keep = doc.addons.filter((/** @type {any} */ e) => (typeof e?.id === 'string' && e.id ? e.id : typeof e?.wago === 'string' ? e.wago.trim().toLowerCase() : slug(String(e?.repo ?? ''))) !== id);
   if (keep.length !== doc.addons.length) writeJsonAtomic(doc.file, { addons: keep });
 }

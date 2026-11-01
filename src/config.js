@@ -4,7 +4,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { BUILTIN_IDS } from './addons.js';
+import { DEFAULT_SELECTED } from './addons.js';
 
 export const APP = 'wow-forever-essentals-updater';
 /** This tool's earlier name; its config and state are carried over once. */
@@ -32,7 +32,7 @@ export const DEFAULT_CONFIG = {
   include_books: true,
   github_token: '',
   keep_downloads: false,
-  selected: BUILTIN_IDS,
+  selected: DEFAULT_SELECTED,
   pinned: {},
 };
 
@@ -117,7 +117,7 @@ export function loadConfig(dir) {
   const raw = readJson(path.join(dir, 'config.json')) ?? {};
   const cfg = { ...DEFAULT_CONFIG, ...raw };
   // Never share the default array. Ids are kept even when unknown here: custom addons come from addons.json.
-  cfg.selected = (Array.isArray(cfg.selected) ? cfg.selected : BUILTIN_IDS).filter((g) => typeof g === 'string');
+  cfg.selected = (Array.isArray(cfg.selected) ? cfg.selected : DEFAULT_SELECTED).filter((g) => typeof g === 'string');
   cfg.pinned = cfg.pinned && typeof cfg.pinned === 'object' && !Array.isArray(cfg.pinned) ? { ...cfg.pinned } : {};
   return cfg;
 }

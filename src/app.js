@@ -120,7 +120,7 @@ export function inspect(item, rel, addons, st, flags = {}) {
   if (!rel) {
     return { ...plan, status: 'unavailable', reason: item.optional ? 'not published for this language' : 'no release found' };
   }
-  const o = { letters: !!item.letterSuffix };
+  const o = { letters: !!item.letterSuffix, loose: !!item.loose };
   // Older state files may list placeholder folders the item doesn't own; they're not ours to check.
   const recorded = (st ? Object.keys(st.folders) : adoptFolders(addons, item, rel)).filter(item.owns);
   if (!recorded.length) return { ...plan, status: 'not-installed', reason: 'not installed', act: true };
