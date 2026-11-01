@@ -5,7 +5,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { selfUpdate, selfAssetName, swapExecutable } from '../src/selfupdate.js';
+import { selfUpdate, selfAssetName, swapExecutable, trySelfUpdate, RELAUNCHED } from '../src/selfupdate.js';
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'selfupd-'));
 
@@ -83,4 +83,69 @@ test('swapExecutable leaves no .new behind', () => {
   fs.writeFileSync(next, 'b');
   swapExecutable(exe, next);
   assert.deepEqual(fs.readdirSync(dir).sort(), ['n', 'x', 'x.old']);
+});
+
+/** Seams for trySelfUpdate that record what happened instead of replacing and restarting anything. @param {{ result?: 'updated' | 'current', fail?: boolean, spawnResult?: any, env?: NodeJS.ProcessEnv }} [o] */
+function seams(o = {}) {
+  const calls = { update: 0, spawn: /** @type {any[]} */ ([]), exit: /** @type {number[]} */ ([]) };
+  return {
+    calls,
+    seams: {
+      isSea: true, exe: '/app/updater', args: ['--yes', 'update'], env: o.env ?? {},
+      update: /** @type {any} */ (async () => {
+        calls.update++;
+        if (o.fail) throw new Error('offline');
+        return o.result ?? 'updated';
+      }),
+      spawn: /** @type {any} */ ((/** @type {string} */ exe, /** @type {string[]} */ args, /** @type {any} */ opts) => {
+        calls.spawn.push({ exe, args, opts });
+        return o.spawnResult ?? { status: 0 };
+      }),
+      exit: (/** @type {number} */ code) => void calls.exit.push(code),
+    },
+  };
+}
+
+test('after an update the new executable is started with the same arguments, and its exit code is ours', async () => {
+  const t = seams({ spawnResult: { status: 3 } });
+  await trySelfUpdate('1.0.0', '/cache', t.seams);
+  assert.equal(t.calls.spawn.length, 1);
+  assert.equal(t.calls.spawn[0].exe, '/app/updater');
+  assert.deepEqual(t.calls.spawn[0].args, ['--yes', 'update']);
+  assert.equal(t.calls.spawn[0].opts.stdio, 'inherit', 'same terminal');
+  assert.equal(t.calls.spawn[0].opts.env[RELAUNCHED], '1', 'the new copy is told not to update again');
+  assert.deepEqual(t.calls.exit, [3]);
+});
+
+test('no restart when there was nothing to update, or the check failed, or this is a dev run', async () => {
+  for (const o of [{ result: 'current' }, { fail: true }]) {
+    const t = seams(/** @type {any} */ (o));
+    await trySelfUpdate('1.0.0', '/cache', t.seams);
+    assert.equal(t.calls.update, 1);
+    assert.deepEqual([t.calls.spawn.length, t.calls.exit.length], [0, 0]);
+  }
+  const dev = seams();
+  await trySelfUpdate('dev', '/cache', dev.seams);
+  await trySelfUpdate('1.0.0', '/cache', { ...dev.seams, isSea: false });
+  assert.equal(dev.calls.update, 0);
+});
+
+test('the restarted copy does not check for an update, so it cannot restart forever', async () => {
+  const t = seams({ env: { [RELAUNCHED]: '1' } });
+  await trySelfUpdate('1.0.0', '/cache', t.seams);
+  assert.deepEqual([t.calls.update, t.calls.spawn.length, t.calls.exit.length], [0, 0, 0]);
+});
+
+test('if the new copy cannot be started, this one carries on instead of exiting', async () => {
+  const t = seams({ spawnResult: { error: new Error('EACCES') } });
+  await trySelfUpdate('1.0.0', '/cache', t.seams);
+  assert.equal(t.calls.spawn.length, 1);
+  assert.deepEqual(t.calls.exit, []);
+});
+
+test('a real child process: its exit code comes back and it sees the do-not-update flag', async () => {
+  const t = seams();
+  const real = { ...t.seams, exe: process.execPath, args: ['-e', `process.exit(process.env.${RELAUNCHED} === '1' ? 7 : 1)`], spawn: undefined };
+  await trySelfUpdate('1.0.0', '/cache', /** @type {any} */ (real));
+  assert.deepEqual(t.calls.exit, [7]);
 });

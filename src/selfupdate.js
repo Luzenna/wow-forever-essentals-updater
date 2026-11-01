@@ -4,7 +4,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import sea from 'node:sea';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import * as semver from './semver.js';
 import * as log from './log.js';
 import { HttpError, USER_AGENT, withRetry } from './http.js';
@@ -63,7 +63,7 @@ export async function selfUpdate(o) {
 
   swapExecutable(o.exe, file);
   fs.rmSync(path.dirname(path.dirname(dest)), { recursive: true, force: true });
-  log.info(`Updated to ${latest}. The new version is used from the next run.`);
+  log.info(`Updated to ${latest}.`);
   return 'updated';
 }
 
@@ -106,14 +106,37 @@ export function cleanupOld(exe) {
   }
 }
 
-/** The entry point cli.js uses: packaged builds only, warns instead of throwing. @param {string} version @param {string} cacheDir */
-export async function trySelfUpdate(version, cacheDir) {
-  if (version === 'dev' || !sea.isSea()) return;
-  const exe = process.execPath;
+/** Set in the environment of the restarted copy, which must not look for an update again. */
+export const RELAUNCHED = 'WFE_RELAUNCHED';
+
+/**
+ * The entry point cli.js uses: packaged builds only, warns instead of throwing. After an update it starts
+ * the new executable with the same arguments in this terminal and exits with its exit code, so the new
+ * version runs right away instead of the old one carrying on. If the new copy cannot be started, the old
+ * one continues and says so.
+ * @param {string} version @param {string} cacheDir
+ * @param {{ isSea?: boolean, exe?: string, args?: string[], env?: NodeJS.ProcessEnv, update?: typeof selfUpdate,
+ *           spawn?: typeof spawnSync, exit?: (code: number) => void }} [seams] for tests
+ */
+export async function trySelfUpdate(version, cacheDir, seams = {}) {
+  if (version === 'dev' || !(seams.isSea ?? sea.isSea())) return;
+  const exe = seams.exe ?? process.execPath;
+  const env = seams.env ?? process.env;
   cleanupOld(exe);
+  if (env[RELAUNCHED]) return; // we are the restarted copy, just updated
+  let updated = false;
   try {
-    await selfUpdate({ version, exe, cacheDir });
+    updated = (await (seams.update ?? selfUpdate)({ version, exe, cacheDir })) === 'updated';
   } catch (e) {
     log.warn(`Could not check for a wow-forever-essentals-updater update: ${/** @type {Error} */ (e)?.message ?? e}`);
   }
+  if (!updated) return;
+
+  log.info('Restarting with the new version...');
+  const res = (seams.spawn ?? spawnSync)(exe, seams.args ?? process.argv.slice(2), { stdio: 'inherit', env: { ...env, [RELAUNCHED]: '1' } });
+  if (res.error) {
+    log.warn(`Could not restart automatically (${res.error.message}). Start it again to use the new version.`);
+    return;
+  }
+  (seams.exit ?? process.exit)(res.status ?? 1);
 }

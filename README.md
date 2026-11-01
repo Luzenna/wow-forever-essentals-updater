@@ -88,7 +88,7 @@ From source (needs Node 22+): `npm install`, then `npm start`.
 - `--force`: install even while WoW is running.
 - `--pin <version>`: with `install --only <item>`, install that exact version and hold it there. This also rolls back a bad update. `--unpin` releases the hold. Status shows "held at 1.4.0".
 - `--overwrite-dev`: replace (or remove) a folder that looks like your own working copy; see below.
-- `--no-self-update`: skip the check for a newer version of this tool. Normally `update`, `install` and the menu first look at this tool's GitHub releases and, if a newer one exists, download it (sha256-checked, and test-run before use) and replace the executable; the new version takes effect on the next run. If anything fails it only prints a warning and carries on.
+- `--no-self-update`: skip the check for a newer version of this tool. Normally `update`, `install` and the menu first look at this tool's GitHub releases and, if a newer one exists, download it (sha256-checked, and test-run before use) and replace the executable, then restart themselves into the new version with the same arguments, so you never keep running the old one. If anything fails, including the restart, it only prints a warning and carries on.
 - `--pause-on-exit`: keep the window open at the end.
 - `--verbose`: print more detail.
 
