@@ -115,6 +115,7 @@ async function pressEnter(io) {
 
 /** @param {Deps} deps @param {IO} io */
 async function selectAddons(deps, io) {
+  clearScreen(io.output); // like every other screen: no dashboard and menu left on screen above the list
   const cfg = loadConfig(deps.configDir);
   const { entries, problems } = loadCustom(deps.configDir);
   const GROUPS = listGroups(entries);
@@ -128,20 +129,26 @@ async function selectAddons(deps, io) {
   // An addon that cannot work alone brings what it needs (Baganator -> Syndicator).
   const chosen = withRequired(picked, [...BUILTIN, ...entries]);
   const next = { ...cfg, selected: [...GROUPS.map((g) => g.id).filter((id) => chosen.includes(id)), ...unlisted] };
-  if (next.selected.includes('spoken')) {
-    const parts = await checklist('Spoken voice packs (the addon and the quest voices are always included)', [
-      { value: 'zones', label: 'Zone voices', hint: 'about 470 MB', checked: cfg.include_zones },
-      { value: 'books', label: 'Book voices', hint: 'about 470 MB', checked: cfg.include_books },
-    ], io);
-    if (parts) {
-      next.include_zones = parts.includes('zones');
-      next.include_books = parts.includes('books');
-    }
-  }
+  // Spoken's voice packs are asked about when Spoken is newly ticked, not on every change to some other addon.
+  // They stay reachable later under Settings.
+  const spokenAdded = next.selected.includes('spoken') && !cfg.selected.includes('spoken');
   saveConfig(deps.configDir, next);
+  if (spokenAdded) await pickVoicePacks(deps, io);
   log.info(next.selected.length
     ? `${paint('green', sym().ok)} Saved. You'll get: ${GROUPS.filter((g) => next.selected.includes(g.id)).map((g) => g.title).join(', ')}`
     : 'Nothing selected.');
+}
+
+/** Which of Spoken's optional voice packs to get. @param {Deps} deps @param {IO} io */
+async function pickVoicePacks(deps, io) {
+  const cfg = loadConfig(deps.configDir);
+  const parts = await checklist('Spoken voice packs (the addon and the quest voices are always included)', [
+    { value: 'zones', label: 'Zone voices', hint: 'about 470 MB', checked: cfg.include_zones },
+    { value: 'books', label: 'Book voices', hint: 'about 470 MB', checked: cfg.include_books },
+  ], io);
+  if (!parts) return;
+  saveConfig(deps.configDir, { ...cfg, include_zones: parts.includes('zones'), include_books: parts.includes('books') });
+  log.info(`${paint('green', sym().ok)} Spoken voice packs: ${['quests', ...parts.filter((p) => p === 'zones' || p === 'books')].join(', ')}`);
 }
 
 /** @param {Deps} deps @param {IO} io */
@@ -227,10 +234,12 @@ async function settings(deps, io) {
     const what = await choose('Settings', [
       { value: 'folder', label: 'WoW AddOns folder', hint: 'where addons are installed' },
       { value: 'language', label: 'Spoken voice language', hint: 'extra languages for the voiceovers' },
+      { value: 'voices', label: 'Spoken voice packs', hint: 'zone and book voices (about 470 MB each)' },
       { value: 'back', label: 'Back' },
     ], io);
     if (what === 'folder') await pickAddonsFolder(deps, io);
     else if (what === 'language') await pickLanguage(deps, io);
+    else if (what === 'voices') await pickVoicePacks(deps, io);
     else return;
   }
 }

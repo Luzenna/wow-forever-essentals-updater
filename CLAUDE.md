@@ -37,6 +37,22 @@ There is no linter. The build downloads and sha256-verifies the official Node bi
 
 `node:test` in `test/`. `test/helpers.js` provides an in-memory stored-zip writer (`makeZip`, which writes names verbatim so tests can use backslashes or `../`), temp dirs, and a local HTTP server serving fake release zips. `test/app.test.js` covers Spoken end to end, `test/addons.test.js` the plain-tag addons and migration, `test/custom.test.js` addons.json, adding/removing, developer copies, pins and notes, `test/menu.test.js` the prompts, the menu loop and the entry rules (a `PassThrough` stands in for the keyboard), `test/ui.test.js` colours, widths and the dashboard rows. Add tests in this style rather than touching the network.
 
+### Testing the interactive menu (do this for any change to `menu.js`, `tui.js`, `ui.js` or `cli.js`'s menu entry)
+
+`npm test` is not enough for the menu. Most menu tests answer through the numbered fallback (`scripted([...])`), which never touches the arrow-key path a real terminal uses, and they cannot see what is on screen. Two bugs got to a release that way (the addon selector left the old dashboard on screen and dragged you into Spoken's voice packs on every confirm). So also **use the real app in a real pseudo-terminal and look at the screen**:
+
+```
+python -m venv "$TEMP/wfe-venv"                         # once, outside the repo
+"$TEMP/wfe-venv/Scripts/python" -m pip install -r scripts/ui/requirements.txt   # Linux: bin/python
+PYTHONUTF8=1 "$TEMP/wfe-venv/Scripts/python" scripts/ui/select-addons.py        # exits 1 and lists what is wrong
+```
+
+- `scripts/ui/drive.py` runs the real CLI in a ConPTY (Windows, `pywinpty`) or a Unix pty (`ptyprocess`), feeds real key bytes (`s.send(s.DOWN)`, `s.SPACE`, `s.ENTER`, `s.ESC`) and renders the screen with `pyte`, so `s.screen()` is what the user sees: stale lines, wrong cursor, a prompt that should not have opened.
+- `scripts/ui/select-addons.py` is a worked scenario with assertions. For a new menu flow, copy it, drive the flow by hand first and read `s.screen()` after every key, then turn what you saw into assertions.
+- It always runs against a throwaway config and AddOns folder (`WFE_UPDATER_HOME` plus `--addons <temp dir>`, as the scripts do), never the real ones, and with `--no-self-update`.
+- When fixing a menu bug, first reproduce it with a script and check that it fails on the old code (`git show HEAD:src/menu.js`), then fix it, then add a regression test in `test/menu.test.js` using the raw-key `keyboard()` helper (it records what was drawn via `k.text()`; use `until(...)` before pressing keys so none are sent before their prompt exists).
+- Do not drive the user's own windows with the desktop-control tools (Windows MCP) or send them keystrokes, and do not kill their processes. A console launched that way may have no visible window. The pseudo-terminal approach above needs none of that.
+
 ## Releases
 
 Pushes to `main` touching `src/`, `scripts/` or `package*.json` auto-release via `.github/workflows/release.yml`. The version bump is driven by commit subject markers: `#minor`/`[minor]`, `#major`/`[major]`, `#norelease`, `#release` (default is patch). Mind these markers when writing commit messages. Releases publish only the `wow-forever-essentals-updater` binaries (the old `spoken-updater`-named copies were dropped once the existing installs had updated; releases up to v1.1.1 still carry them). `SELF_REPO` in `src/selfupdate.js` must match the real GitHub repo name.

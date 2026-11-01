@@ -20,7 +20,8 @@ function keyboard() {
   input.isTTY = true;
   input.setRawMode = () => input;
   const output = /** @type {any} */ (new PassThrough());
-  output.resume(); // discard what is drawn
+  let drawn = '';
+  output.on('data', (/** @type {Buffer} */ d) => (drawn += d)); // flowing, and kept so a test can check what was shown
   /** @param {string[]} keys */
   const press = async (keys) => {
     for (const k of keys) {
@@ -30,7 +31,7 @@ function keyboard() {
   };
   /** @type {import('../src/tui.js').IO} */
   const io = { input, output, ask: async () => { throw new Error('should not ask with a keyboard'); } };
-  return { io, press };
+  return { io, press, text: () => drawn };
 }
 
 /** No keyboard (a pipe): prompts fall back to numbered lines, answered from a script. @param {string[]} answers */
@@ -123,15 +124,63 @@ test('menu: select addons saves the selection, exit ends the loop', async () => 
   assert.equal(s.left(), 0);
 });
 
-test('menu: Spoken asks which audio packs, and the answers are saved', async () => {
-  const { configDir, deps } = setup();
-  // Select addons, keep all four, then toggle Zones audio off; Exit.
-  const s = scripted(['2', '', '1', '', '6']);
+test('menu: ticking Spoken asks which voice packs, and the answers are saved', async () => {
+  const { configDir, deps } = setup({ selected: ['nodesight'] });
+  // Select addons, tick Spoken (1), confirm; the packs prompt: toggle Zones off, confirm; Exit.
+  const s = scripted(['2', '1', '', '1', '', '6']);
   await runMenu({}, deps, s.io);
   const cfg = loadConfig(configDir);
   assert.equal(cfg.include_zones, false);
   assert.equal(cfg.include_books, true);
-  assert.equal(cfg.selected.length, 4);
+  assert.deepEqual(cfg.selected, ['spoken', 'nodesight']);
+  assert.equal(s.left(), 0);
+});
+
+test('menu: changing another addon does not drag you through the Spoken voice packs', async () => {
+  const { configDir, deps } = setup(); // Spoken is already selected
+  // Select addons, tick DialogKey (5), confirm; straight back to the menu; Exit. Any packs prompt would eat an answer and fail.
+  const s = scripted(['2', '5', '', '6']);
+  await runMenu({}, deps, s.io);
+  assert.ok(loadConfig(configDir).selected.includes('dialogkey'));
+  assert.equal(s.left(), 0);
+  assert.ok(!s.asked.some((q) => /voice packs/i.test(q)));
+});
+
+test('menu: the Spoken voice packs can be changed later under Settings', async () => {
+  const { configDir, deps } = setup();
+  // Settings (5) > Spoken voice packs (3): toggle Books off, confirm; Settings > Back (4); Exit.
+  const s = scripted(['5', '3', '2', '', '4', '6']);
+  await runMenu({}, deps, s.io);
+  const cfg = loadConfig(configDir);
+  assert.equal(cfg.include_books, false);
+  assert.equal(cfg.include_zones, true);
+  assert.equal(s.left(), 0);
+});
+
+/** Wait until a condition holds, so a key is never pressed before the prompt that should get it. @param {() => boolean} cond */
+async function until(cond, ms = 5000) {
+  const end = Date.now() + ms;
+  while (!cond()) {
+    if (Date.now() > end) throw new Error('timed out waiting for the menu');
+    await new Promise((r) => setTimeout(r, 10));
+  }
+}
+
+test('menu with real keys: tick one addon with Space, confirm with Enter, and land back on the menu', async () => {
+  const { configDir, deps } = setup();
+  const k = keyboard();
+  const run = runMenu({}, deps, k.io);
+  await until(() => k.text().includes('What would you like to do?'));
+  await k.press([KEY.down, KEY.enter]); // Choose which addons I want
+  await until(() => k.text().includes('Which addons do you want?'));
+  await k.press([KEY.down, KEY.down, KEY.down, KEY.down, KEY.space]); // DialogKey is the fifth item
+  await k.press([KEY.enter]);
+  await until(() => loadConfig(configDir).selected.includes('dialogkey'));
+  assert.ok(!k.text().includes('Spoken voice packs'), 'confirming did not open the Spoken options');
+  await until(() => (k.text().match(/What would you like to do?/g) ?? []).length >= 2); // back on the main menu
+  await k.press(['q']);
+  assert.equal(await run, 0);
+  assert.equal(k.io.input.listenerCount('keypress'), 0, 'no prompt is left listening');
 });
 
 test('menu: backing out of a list changes nothing, and a failing item does not close the menu', async () => {
