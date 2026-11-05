@@ -33,11 +33,11 @@ fs.mkdirSync(dist, { recursive: true });
 // 1. Bundle
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
 await esbuild.build({
-  entryPoints: [path.join(root, 'src/main.js')],
+  entryPoints: [path.join(root, 'src/main.ts')],
   bundle: true,
   platform: 'node',
   format: 'cjs',
-  target: 'node22',
+  target: 'node24',
   outfile: path.join(build, 'bundle.cjs'),
   banner: { js: `// wow-forever-essentals-updater ${pkg.version}` },
   define: { 'globalThis.__APP_VERSION__': JSON.stringify(pkg.version) },

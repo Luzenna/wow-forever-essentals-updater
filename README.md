@@ -51,6 +51,7 @@ What would you like to do?
     Quit
 ```
 
+- **Leave it open:** while the menu waits for a key it looks for new releases every 5 minutes and redraws the overview. When an addon gets a version it hasn't shown you yet, the terminal beeps and a desktop notification appears (a Windows toast, or `notify-send` on Linux/Steam Deck when installed). Each new version is announced once; without a keyboard (a pipe) there is no refresh.
 - **Install or update my addons** downloads only what changed, shows a progress bar per addon, and ends with a summary of what was updated and what failed.
 - **Choose which addons I want** is a checkbox list (arrows and Space, `a` for all/none, Enter to confirm, Esc to cancel). Choosing Spoken also asks whether to include the Zone and Book voices. Your choice is saved in the config, and addons you don't select are never touched.
 - **Add or remove addons...** adds any GitHub repo that publishes a release zip (see [Your own addons](#your-own-addons)), or uninstalls an addon.
@@ -74,7 +75,7 @@ wow-forever-essentals-updater clean               prune the download cache
 wow-forever-essentals-updater --lang frFR         also install the French Spoken voice packs
 ```
 
-From source (needs Node 22+): `npm install`, then `npm start`.
+From source (needs Node 24+): `npm install`, then `npm start`.
 
 **Spoken items by default:**
 - the Spoken addon: the player plus its Quests, Zones and Books modules (folders `Spoken`, `Spoken_Quests`, `Spoken_Zones`, `Spoken_Books`, `SpokenContributions`)
@@ -227,9 +228,9 @@ every line would be voiced twice. Upstream's empty placeholder folders (e.g. the
 - This depends on how Wago's page is built. If Wago changes it, the affected addons fail with a message saying so, and the rest carry on.
 - Wago's `robots.txt` asks automated clients to stay out of `/download/`. To learn a zip's size this tool sends one small HEAD request (no file) to that path per Wago addon each time it checks, plus one page request; the zip itself comes from Wago's CDN. Only addons you have selected are checked. Don't select more than you use.
 
-**What's Training (temporary).** It is only on CurseForge, and its author has switched off third-party downloads there, so there is no source to ask for new releases. For now the tool installs one fixed file, version 1.1.1, from a fixed URL, and checks it against a recorded size and sha256. It does not look for newer versions: when the author releases one, the entry in `src/addons.js` has to be updated by hand. This is a stop-gap until the author allows third-party downloads or publishes GitHub releases.
+**What's Training (temporary).** It is only on CurseForge, and its author has switched off third-party downloads there, so there is no source to ask for new releases. For now the tool installs one fixed file, version 1.1.1, from a fixed URL, and checks it against a recorded size and sha256. It does not look for newer versions: when the author releases one, the entry in `src/catalog/builtin.ts` has to be updated by hand. This is a stop-gap until the author allows third-party downloads or publishes GitHub releases.
 
-Sources plug in through `src/sources/source.js`; `src/sources/wago.js` is the Wago one and `src/sources/fixed.js` the fixed-URL one.
+Sources plug in through `src/sources/source.ts`; `src/sources/wago.ts` is the Wago one and `src/sources/fixed.ts` the fixed-URL one.
 
 ## How it installs safely
 
@@ -244,6 +245,7 @@ Sources plug in through `src/sources/source.js`; `src/sources/wago.js` is the Wa
 ## Development
 
 ```
+npm run typecheck  # tsc --noEmit
 npm test           # node:test, no network, fake zips and fake WoW/Steam Deck trees
 npm run build      # dist/wow-forever-essentals-updater.exe and dist/wow-forever-essentals-updater-linux-x64
 make               # same, via make
@@ -251,14 +253,14 @@ make               # same, via make
 
 The build bundles `src/` with esbuild into a Node [single executable application](https://nodejs.org/api/single-executable-applications.html). It downloads the official Node binaries for each platform, checks them against nodejs.org's SHASUMS256, and injects the bundle. Both targets build from Windows or Linux. Each binary is about 85–120 MB because it contains Node.
 
-Console look and feel lives in `src/ui.js` (colours, symbols, banner) and `src/tui.js` (the lists); it all falls back to plain text off a terminal.
+Console look and feel lives in `src/ui/term.ts` (colours, symbols, banner) and `src/ui/prompts.ts` (the lists); it all falls back to plain text off a terminal.
 
-To make an addon built in, add it to `BUILTIN` in `src/addons.js`; Spoken, which is several items, is the only special case, in `src/catalog.js`.
+To make an addon built in, add it to `BUILTIN` in `src/catalog/builtin.ts`; Spoken, which is several items, is the only special case, in `src/catalog/spoken.ts`.
 
 ## Releases
 
-Every push to `main` that touches `src/`, `scripts/` or `package*.json` is released by
-`.github/workflows/release.yml`. It runs the tests on Ubuntu and Windows, builds both
+Every push to `main` that touches `src/`, `scripts/`, `tsconfig.json` or `package*.json` is released by
+`.github/workflows/release.yml`. It type-checks, runs the tests on Ubuntu and Windows, builds both
 executables, smoke-tests each on its own OS, and publishes a GitHub release with
 `SHA256SUMS.txt`.
 

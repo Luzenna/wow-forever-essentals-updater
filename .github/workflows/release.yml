@@ -66,7 +66,7 @@ jobs:
           changed=$(git diff --name-only "$BEFORE" "$AFTER")
           echo "Changed files:"; printf '%s\n' "$changed" | sed 's/^/  /'
           # Paths that can change the shipped executables.
-          if printf '%s\n' "$changed" | grep -qE '^(src/|scripts/|package\.json|package-lock\.json)'; then
+          if printf '%s\n' "$changed" | grep -qE '^(src/|scripts/|tsconfig\.json|package\.json|package-lock\.json)'; then
             echo "release=true" >> "$GITHUB_OUTPUT"
           elif printf '%s' "$HEAD_MSG" | grep -qiE '(^|[[:space:]])#release([[:space:]]|$)'; then
             echo "#release forces a version"; echo "release=true" >> "$GITHUB_OUTPUT"
@@ -130,9 +130,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
       - run: npm ci
+      - run: npm run typecheck
       - run: npm test
 
   build:
@@ -142,7 +143,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
       - run: npm ci
 

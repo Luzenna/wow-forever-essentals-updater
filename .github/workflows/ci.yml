@@ -1,0 +1,49 @@
+name: CI
+
+# Checks every branch push and pull request. Pushes to main are checked by the
+# release workflow (which also builds and publishes), so they are left out here.
+
+on:
+  push:
+    branches-ignore: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Build the Linux executable
+        run: node scripts/build.mjs linux-x64
+      - name: Smoke test the Linux executable
+        run: |
+          set -euo pipefail
+          out=$(./dist/wow-forever-essentals-updater-linux-x64 --version)
+          echo "reported version: $out"
+          test -n "$out"
+          ./dist/wow-forever-essentals-updater-linux-x64 --help > /dev/null
+          HOME=$(mktemp -d) ./dist/wow-forever-essentals-updater-linux-x64 detect || test $? -eq 2

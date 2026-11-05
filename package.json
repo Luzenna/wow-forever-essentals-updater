@@ -4,15 +4,13 @@
   "description": "Install and update the essential addons for WoW: Forever (Spoken, LuzennaForever, NodeSight, Dialogue UI)",
   "type": "module",
   "private": true,
-  "bin": {
-    "wow-forever-essentals-updater": "src/main.js"
-  },
   "engines": {
-    "node": ">=22"
+    "node": ">=24"
   },
   "scripts": {
-    "start": "node src/main.js",
-    "test": "node --test \"test/*.test.js\"",
+    "start": "node src/main.ts",
+    "test": "node --test \"test/*.test.ts\"",
+    "typecheck": "tsc --noEmit",
     "build": "node scripts/build.mjs"
   },
   "license": "MIT",
@@ -20,7 +18,10 @@
     "yauzl": "^3.4.0"
   },
   "devDependencies": {
+    "@types/node": "^24.19.2",
+    "@types/yauzl": "^3.4.0",
     "esbuild": "^0.28.2",
-    "postject": "^1.0.0-alpha.6"
+    "postject": "^1.0.0-alpha.6",
+    "typescript": "^7.0.2"
   }
 }

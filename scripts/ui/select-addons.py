@@ -12,7 +12,7 @@ repo = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), 
 base = tempfile.mkdtemp(prefix="wfe-ui-")
 home, addons = os.path.join(base, "home"), os.path.join(base, "AddOns")
 os.makedirs(home); os.makedirs(addons)
-s = Session(["node", "src/main.js", "--addons", addons, "--no-self-update"], home=home, cwd=repo, rows=45, cols=110)
+s = Session(["node", "src/main.ts", "--addons", addons, "--no-self-update"], home=home, cwd=repo, rows=45, cols=110)
 problems = []
 try:
     s.wait_for("What would you like to do?", 90)

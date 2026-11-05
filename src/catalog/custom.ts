@@ -1,0 +1,144 @@
+// The user's own addon list, addons.json in the config folder. Hand-editable, so
+// nothing here may throw on bad input: a broken file or entry becomes a message and
+// the rest of the tool carries on without it.
+import fs from 'node:fs';
+import path from 'node:path';
+import { writeJsonAtomic } from '../config/paths.ts';
+import { BUILTIN, BUILTIN_IDS } from './builtin.ts';
+import type { AddonEntry } from './builtin.ts';
+import { RETIRED_ITEMS, isSpokenFolder } from './spoken.ts';
+
+export const ADDONS_FILE = 'addons.json';
+
+/** `owner/name` from a repo address: owner/name, a github.com URL, with .git or extra path. Null if it isn't one. */
+export function parseRepo(text: string) {
+  const t = String(text ?? '').trim();
+  const m = /^(?:https?:\/\/)?(?:www\.)?github\.com\/([\w.-]+)\/([\w.-]+?)(?:\.git)?(?:[/?#].*)?$/i.exec(t) ?? /^([\w.-]+)\/([\w.-]+?)(?:\.git)?$/.exec(t);
+  if (!m || /^\.+$/.test(m[1]) || /^\.+$/.test(m[2])) return null;
+  return `${m[1]}/${m[2]}`;
+}
+
+/** A short id from a repo name: "Krelock/Node_Sight" -> "node-sight". */
+export const slug = (repo: string) => (repo.split('/')[1] ?? repo).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+
+/** A plain folder name: no path parts, nothing Windows rejects. */
+const isFolderName = (n: unknown): boolean => typeof n === 'string' && n.trim() === n && n !== '' && n !== '.' && n !== '..' && !/[\\/:*?"<>|]/.test(n);
+
+/**
+ * Check entries from addons.json. Bad ones are skipped with a message that names the entry and the rule.
+ */
+export function validate(list: unknown): { entries: AddonEntry[]; problems: string[] } {
+  const problems: string[] = [];
+  const entries: AddonEntry[] = [];
+  if (!Array.isArray(list)) return { entries, problems: [`${ADDONS_FILE}: expected a list of addons under "addons"`] };
+
+  // Folders already owned by something else, lower case.
+  const taken = new Map<string, { who: string; builtin?: boolean }>(BUILTIN.flatMap((a) => a.folders.map((f): [string, { who: string; builtin?: boolean }] => [f.toLowerCase(), { who: a.title, builtin: true }])));
+  // Ids the tool uses itself, including the retired Spoken 2.x ones it cleans up after.
+  const ids = new Set([...BUILTIN_IDS, ...RETIRED_ITEMS]);
+
+  list.forEach((raw, i) => {
+    const e = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+    const label = `${ADDONS_FILE} entry ${i + 1}${typeof e.repo === 'string' ? ` (${e.repo})` : typeof e.wago === 'string' ? ` (wago ${e.wago})` : ''}`;
+    const skip = (why: string) => problems.push(`${label} skipped: ${why}`);
+
+    // Released on GitHub ("repo"), or only on Wago Addons ("wago": the slug in addons.wago.io/addons/<slug>).
+    const wago = typeof e.wago === 'string' ? e.wago.trim().toLowerCase() : undefined;
+    if (wago !== undefined) {
+      if (e.repo !== undefined) return skip('use either "repo" or "wago", not both');
+      if (!/^[a-z0-9][a-z0-9-]*$/.test(wago)) return skip('"wago" must be the addon name from its addons.wago.io address, e.g. "baganator"');
+    }
+    const repo = wago !== undefined ? undefined : typeof e.repo === 'string' ? parseRepo(e.repo) : null;
+    if (repo === null) return skip('"repo" must look like owner/name or a github.com address (or give "wago" instead)');
+    const folders = Array.isArray(e.folders) ? e.folders : null;
+    if (!folders?.length) return skip('"folders" must list the addon folder names to install, e.g. ["MyAddon"]');
+    const badFolder = folders.find((f) => !isFolderName(f));
+    if (badFolder !== undefined) return skip(`"${badFolder}" is not a plain folder name`);
+    const blizz = folders.find((f) => /^blizzard_/i.test(f));
+    if (blizz) return skip(`${blizz} belongs to the game and can never be managed`);
+    const clash = folders.find((f) => isSpokenFolder(f) || taken.has(f.toLowerCase()));
+    if (clash) {
+      const owner = isSpokenFolder(clash) ? { who: 'Spoken', builtin: true } : taken.get(clash.toLowerCase());
+      return skip(owner?.builtin && owner.who.toLowerCase() === clash.toLowerCase() ? `${clash} is already built into this tool` : `${clash} is already managed by ${owner?.who}`);
+    }
+
+    const id = typeof e.id === 'string' && e.id ? e.id : wago ?? slug(repo as string);
+    if (!/^[a-z0-9][a-z0-9-]*$/.test(id)) return skip(`id "${id}" may only use lower-case letters, digits and dashes`);
+    if (ids.has(id) || /^(quests|zones|books)-audio/.test(id)) return skip(`id "${id}" is already in use; give it a different "id"`);
+    if (e.asset !== undefined) {
+      try {
+        new RegExp(String(e.asset), 'i');
+      } catch (err) {
+        return skip(`"asset" is not a valid pattern (${(err as Error).message})`);
+      }
+    }
+
+    ids.add(id);
+    for (const f of folders) taken.set(f.toLowerCase(), { who: String(e.title ?? id) });
+    entries.push({
+      id, repo, wago, folders: [...folders], title: typeof e.title === 'string' && e.title ? e.title : repo?.split('/')[1] ?? (wago as string),
+      blurb: typeof e.blurb === 'string' && e.blurb ? e.blurb : repo ?? `${wago} on Wago Addons`,
+      asset: e.asset === undefined ? undefined : String(e.asset), letterSuffix: !!e.letter_suffix, custom: true,
+    });
+  });
+  return { entries, problems };
+}
+
+/** The parsed file, or a message why not. A missing file is an empty list. */
+function readDoc(configDir: string): { file: string; addons: unknown[]; error?: undefined } | { file: string; error: string; addons?: undefined } {
+  const file = path.join(configDir, ADDONS_FILE);
+  let text: string;
+  try {
+    text = fs.readFileSync(file, 'utf8');
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === 'ENOENT') return { file, addons: [] };
+    return { file, error: `cannot read ${file}: ${(e as Error).message}` };
+  }
+  try {
+    const doc = JSON.parse(text);
+    const addons = Array.isArray(doc) ? doc : doc?.addons ?? [];
+    if (!Array.isArray(addons)) return { file, error: `${file}: "addons" must be a list of addons. Fix it, or delete the file to start fresh.` };
+    return { file, addons };
+  } catch (e) {
+    return { file, error: `${file} is not valid JSON. Fix it, or delete it to start fresh.` };
+  }
+}
+
+/** Load the user's addons. Never throws. */
+export function loadCustom(configDir: string) {
+  const doc = readDoc(configDir);
+  if (doc.error) return { entries: [], problems: [doc.error] };
+  return validate(doc.addons);
+}
+
+/**
+ * Add one entry to the file, keeping everything already in it. Refuses to touch a file it can't read.
+ */
+export function addCustom(configDir: string, entry: { id: string; repo: string; folders: string[]; title?: string; blurb?: string; asset?: string; letter_suffix?: boolean }) {
+  const doc = readDoc(configDir);
+  if (doc.error) throw new Error(doc.error);
+  writeJsonAtomic(doc.file, { addons: [...doc.addons!, entry] });
+}
+
+/**
+ * Whether a new entry would be accepted next to the ones already in the file. Returns why not, or null.
+ */
+export function checkNew(configDir: string, entry: { id: string; repo: string; folders: string[]; title?: string }) {
+  const doc = readDoc(configDir);
+  if (doc.error) return doc.error;
+  const before = validate(doc.addons).entries.length;
+  const { entries, problems } = validate([...doc.addons!, entry]);
+  const why = problems[problems.length - 1] ?? '';
+  return entries.length > before ? null : why.replace(/^.*? skipped: /, '') || 'it was not accepted';
+}
+
+/** Drop the entry with this id (an explicit "id" or the one derived from the repo). */
+export function removeCustom(configDir: string, id: string) {
+  const doc = readDoc(configDir);
+  if (doc.error) throw new Error(doc.error);
+  const keep = doc.addons!.filter((raw) => {
+    const e = raw as { id?: unknown; wago?: unknown; repo?: unknown } | null | undefined;
+    return (typeof e?.id === 'string' && e.id ? e.id : typeof e?.wago === 'string' ? e.wago.trim().toLowerCase() : slug(String(e?.repo ?? ''))) !== id;
+  });
+  if (keep.length !== doc.addons!.length) writeJsonAtomic(doc.file, { addons: keep });
+}

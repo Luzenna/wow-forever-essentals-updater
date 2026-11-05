@@ -5,7 +5,7 @@ See "Testing the interactive menu" in CLAUDE.md.
 
 Usage as a module:
     from drive import Session
-    s = Session(["node", "src/main.js", "--addons", addons, "--no-self-update"], home=home, rows=40, cols=110)
+    s = Session(["node", "src/main.ts", "--addons", addons, "--no-self-update"], home=home, rows=40, cols=110)
     s.wait_for("What would you like to do?")
     s.send(Session.DOWN); s.send(Session.ENTER)
     print(s.screen())
@@ -33,6 +33,8 @@ class Session:
         self.lock = threading.Lock()
         self.raw = ""
         e = dict(os.environ)
+        # NO_COLOR switches the app to plain output (no screen clearing), which would hide the very bugs this checks for.
+        e.pop("NO_COLOR", None)
         e.update({"WFE_UPDATER_HOME": home, "FORCE_COLOR": "1", "TERM": "xterm-256color"})
         e.update(env or {})
         self.proc = PtyProcess.spawn(argv, cwd=cwd, env=e, dimensions=(rows, cols))

@@ -1,0 +1,183 @@
+// GitHub Releases source. Lists every release once per run (paginated), then
+// answers per-item queries by tag prefix and semver.
+import * as semver from '../semver.ts';
+import { HttpError, USER_AGENT, withRetry } from '../net/http.ts';
+import type { Item } from '../catalog/catalog.ts';
+import type { Release } from './source.ts';
+
+export interface GhAsset {
+  name: string;
+  size: number;
+  browser_download_url: string;
+  digest?: string | null;
+  state?: string;
+}
+export interface GhRelease {
+  tag_name: string;
+  draft: boolean;
+  prerelease: boolean;
+  assets: GhAsset[];
+  body?: string | null;
+}
+
+/**
+ * Zips meant for Blizzard clients: legacy private-server builds ("<Addon>-WoW_1.12-<ver>.zip") excluded.
+ * An item's own pattern narrows it further (e.g. only the retail build of a multi-flavor release).
+ */
+const usableZips = (assets: GhAsset[], pattern?: RegExp | null): GhAsset[] =>
+  assets.filter((a) => /\.zip$/i.test(a.name) && !/-WoW_\d/i.test(a.name) && (a.state ?? 'uploaded') === 'uploaded' && (!pattern || pattern.test(a.name)));
+
+/**
+ * Pick the zip meant for modern clients (which includes Forever). Usually there
+ * is exactly one. When there are several (spoken/v3.0.0 shipped Spoken-3.0.0.zip
+ * plus tiny placeholder zips for the retired addons), prefer the one named after
+ * the tag prefix, e.g. "spoken" -> "Spoken-3.0.0.zip", and otherwise the largest.
+ */
+export function pickAsset(assets: GhAsset[], prefix?: string | null, version?: string | null, pattern?: RegExp | null): GhAsset {
+  const zips = usableZips(assets, pattern);
+  if (zips.length === 1) return zips[0];
+  if (!zips.length) {
+    const why = pattern ? ` matching /${pattern.source}/` : '';
+    throw new Error(`no Forever-compatible zip${why} among assets: ${assets.map((a) => a.name).join(', ') || '(none)'}`);
+  }
+  const named = prefix && version
+    ? zips.filter((a) => a.name.toLowerCase() === `${prefix}-${version}.zip`.toLowerCase() || a.name.toLowerCase() === `${prefix}-v${version}.zip`.toLowerCase())
+    : [];
+  if (named.length === 1) return named[0];
+  return [...zips].sort((x, y) => y.size - x.size)[0];
+}
+
+/**
+ * Releases for one tag prefix (or, with `plain`, every release whose whole tag is a
+ * version), newest first by semver. Drafts, prereleases and tags that aren't a
+ * version are dropped. `letters` reads 1.0.5-f as a later build of 1.0.5.
+ */
+export function filterReleases(
+  releases: GhRelease[],
+  prefix: string | null,
+  mode: { plain?: boolean; letters?: boolean } = {},
+): { r: GhRelease; version: string | null }[] {
+  const want = mode.plain ? '' : prefix + '/';
+  const o = { letters: !!mode.letters };
+  return releases
+    .filter((r) => !r.draft && !r.prerelease && r.tag_name.startsWith(want))
+    .map((r) => ({ r, version: semver.clean(r.tag_name.slice(want.length), o) }))
+    .filter((x) => x.version !== null && !semver.parse(x.version, o)?.pre.length)
+    .sort((a, b) => semver.compare(b.version as string, a.version as string, o));
+}
+
+function nextLink(link: string | null): string | null {
+  const m = link && /<([^>]+)>;\s*rel="next"/.exec(link);
+  return m ? m[1] : null;
+}
+
+export class GitHubSource {
+  name = 'GitHub';
+  repo: string;
+  token: string | null;
+  apiBase: string;
+  fetch: typeof fetch;
+  retry: Parameters<typeof withRetry>[1];
+  cache: Promise<GhRelease[]> | null;
+  recentCache: Promise<GhRelease[]> | null;
+
+  constructor(
+    opts: {
+      repo?: string;
+      token?: string | null;
+      apiBase?: string;
+      fetchImpl?: typeof fetch;
+      retry?: Parameters<typeof withRetry>[1];
+    } = {},
+  ) {
+    this.repo = opts.repo ?? '';
+    this.token = opts.token ?? null;
+    this.apiBase = opts.apiBase ?? 'https://api.github.com';
+    this.fetch = opts.fetchImpl ?? fetch;
+    this.retry = opts.retry;
+    this.cache = null;
+    this.recentCache = null;
+  }
+
+  /** Every release, paginated. */
+  releases(): Promise<GhRelease[]> {
+    // A failure must not stick: the menu keeps this source for the whole session.
+    this.cache ??= this.#fetch(100, true).catch((e) => {
+      this.cache = null;
+      throw e;
+    });
+    return this.cache;
+  }
+
+  /** Just the newest releases, one small request. Plain-tag repos only need these. */
+  recent(): Promise<GhRelease[]> {
+    this.recentCache ??= this.#fetch(30, false).catch((e) => {
+      this.recentCache = null;
+      throw e;
+    });
+    return this.recentCache;
+  }
+
+  async #fetch(perPage: number, allPages: boolean): Promise<GhRelease[]> {
+    const all: GhRelease[] = [];
+    let url: string | null = `${this.apiBase}/repos/${this.repo}/releases?per_page=${perPage}`;
+    while (url) {
+      const page = url as string;
+      const res = await withRetry(async () => {
+        const headers: Record<string, string> = { Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': USER_AGENT };
+        // The token only ever goes to the API host.
+        if (this.token && new URL(page).host === new URL(this.apiBase).host) headers.Authorization = `Bearer ${this.token}`;
+        const r = await this.fetch(page, { headers });
+        if (!r.ok) {
+          if (r.status === 403 && r.headers.get('x-ratelimit-remaining') === '0' && !this.token) {
+            throw Object.assign(new HttpError(page, r.status, r.headers), {
+              message: 'GitHub API rate limit reached. Set WFE_GITHUB_TOKEN (or github_token in config) and try again.',
+            });
+          }
+          if (r.status === 404) {
+            throw Object.assign(new HttpError(page, r.status, r.headers), { message: `${this.repo} was not found on GitHub (or it is private)` });
+          }
+          throw new HttpError(page, r.status, r.headers);
+        }
+        return r;
+      }, this.retry);
+      all.push(...((await res.json()) as GhRelease[]));
+      url = allPages ? nextLink(res.headers.get('link')) : null;
+    }
+    return all;
+  }
+
+  async latest(item: Item): Promise<Release | null> {
+    const o = { letters: !!item.letterSuffix };
+    const mode = { plain: item.tagMode === 'plain', letters: item.letterSuffix };
+    const pick = (list: GhRelease[]) => {
+      const found = filterReleases(list, item.tagPrefix ?? null, mode);
+      if (!item.pin) return found;
+      const want = semver.clean(item.pin, o);
+      return found.filter((x) => want !== null && semver.compare(x.version as string, want, o) === 0);
+    };
+    // Plain-tag repos: the newest page is enough; look at everything only when it holds nothing usable.
+    const hasZip = (l: ReturnType<typeof pick>) => l.some((x) => usableZips(x.r.assets, item.assetPattern).length);
+    let releases = mode.plain ? pick(await this.recent()) : pick(await this.releases());
+    if (mode.plain && !hasZip(releases)) releases = pick(await this.releases());
+    if (!releases.length) {
+      if (item.pin) throw new Error(`version ${item.pin} was not found in ${this.repo}'s releases`);
+      return null;
+    }
+    const stem = item.assetPrefix ?? item.tagPrefix;
+    // A release can be published without assets (spoken/v3.0.1 was); fall back
+    // to the newest one that has a usable zip.
+    const top = releases.find((x) => usableZips(x.r.assets, item.assetPattern).length);
+    if (!top) pickAsset(releases[0].r.assets, stem, releases[0].version, item.assetPattern); // throws a clear error
+    const t = top as (typeof releases)[number];
+    const a = pickAsset(t.r.assets, stem, t.version as string, item.assetPattern);
+    const digest = a.digest && /^sha256:([0-9a-f]{64})$/i.exec(a.digest);
+    return {
+      version: t.version as string,
+      tag: t.r.tag_name,
+      asset: { name: a.name, url: a.browser_download_url, size: a.size, sha256: digest ? digest[1].toLowerCase() : null },
+      notes: t.r.body ?? '',
+      source: this.name,
+    };
+  }
+}
