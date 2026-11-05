@@ -26,6 +26,11 @@ export class MultiSource implements Source {
     this.wago = new WagoSource({ base: opts.wagoBase, fetchImpl: opts.fetchImpl, retry: opts.retry });
   }
 
+  invalidate(): void {
+    for (const s of this.sources.values()) s.invalidate();
+    this.wago.invalidate();
+  }
+
   async latest(item: Item): Promise<Release | null> {
     if (item.url) return fixedRelease(item);
     if (item.wago) return this.wago.latest(item);

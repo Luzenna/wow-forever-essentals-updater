@@ -8,7 +8,7 @@ import { loadConfig, saveConfig, githubToken } from './config/config.ts';
 import { MultiSource } from './sources/multi.ts';
 import { listGroups, catalogFor } from './catalog/catalog.ts';
 import { isLanguageCode } from './catalog/spoken.ts';
-import { trySelfUpdate } from './selfupdate.ts';
+import { trySelfUpdate, menuSelfUpdate } from './selfupdate.ts';
 import { update } from './commands/update.ts';
 import { uninstall } from './commands/remove.ts';
 import { status } from './commands/status.ts';
@@ -17,7 +17,7 @@ import { clean } from './commands/clean.ts';
 import { makeAsk } from './ui/ask.ts';
 import { UsageError } from './errors.ts';
 import { loadCustom } from './catalog/custom.ts';
-import { runMenu } from './menu/menu.ts';
+import { runMenu, REFRESH_MS, REFRESH_MS_ANONYMOUS } from './menu/menu.ts';
 import { desktopNotify } from './ui/notify.ts';
 import { addFromGitHub } from './commands/add.ts';
 import { stdIO } from './ui/prompts.ts';
@@ -125,7 +125,7 @@ export async function main(argv: string[], test: { interactive?: boolean; deps?:
     case 'menu':
       if (!interactive) throw new UsageError('the menu needs an interactive terminal; use "update" or "status" instead');
       if (!opts.dryRun && !values['no-self-update']) await trySelfUpdate(VERSION, dirs.cache);
-      return runMenu(opts, deps, test.io, VERSION === 'dev' ? '' : VERSION);
+      return runMenu(opts, test.deps || values['no-self-update'] ? deps : { ...deps, selfUpdate: menuSelfUpdate(VERSION, dirs.cache) }, test.io, VERSION === 'dev' ? '' : VERSION, githubToken(cfg) ? REFRESH_MS : REFRESH_MS_ANONYMOUS);
     case 'update':
       if (opts.only) throw new UsageError('use "install --only <items>" to pick items');
       if (!opts.dryRun && !values['no-self-update']) await trySelfUpdate(VERSION, dirs.cache);

@@ -208,6 +208,49 @@ test('menu with real keys: looks again on a timer and announces a new update onc
   assert.equal(k.io.input.listenerCount('keypress'), 0, 'no prompt is left listening');
 });
 
+test('menu refresh asks the source to look again (it caches what it fetched)', async () => {
+  const { deps } = setup({ selected: ['nodesight'] });
+  let invalidated = 0;
+  const watched = { ...deps, source: { name: 'Fake', latest: async () => null, invalidate: () => { invalidated++; } } };
+  const k = keyboard();
+  const run = runMenu({}, watched, k.io, '', 40);
+  const looks = () => (k.text().match(/What would you like to do\?/g) ?? []).length;
+  try {
+    await until(() => looks() >= 3);
+  } finally {
+    await k.press(['q']);
+  }
+  await run;
+  assert.ok(invalidated >= 2, 'every refresh invalidated the source, the first draw did not');
+  assert.ok(invalidated <= looks() - 1);
+});
+
+test('menu refresh offers a newer version of this tool: yes updates and restarts, no is remembered', async () => {
+  const { deps } = setup({ selected: ['nodesight'] });
+  const calls = { check: 0, apply: 0 };
+  const asked: string[] = [];
+  const mk = (answer: string) => ({
+    ...deps, ask: async (q: string) => { asked.push(q); return answer; },
+    selfUpdate: { check: async () => { calls.check++; return '9.9.9'; }, apply: async () => { calls.apply++; } },
+  });
+  const looks = (k: ReturnType<typeof keyboard>) => (k.text().match(/What would you like to do\?/g) ?? []).length;
+  for (const answer of ['n', 'y']) {
+    const k = keyboard();
+    const io = { ...k.io, ask: async (q: string) => { asked.push(q); return answer; } };
+    const run = runMenu({}, mk(answer), io, '2.0.0', 40);
+    try {
+      await until(() => looks(k) >= 4); // several refreshes
+    } finally {
+      await k.press(['q']);
+    }
+    await run;
+    assert.ok(k.text().includes(''), 'the bell rang');
+  }
+  assert.equal(calls.apply, 1, 'only the yes updated');
+  assert.equal(asked.filter((q) => /9\.9\.9/.test(q)).length, 2, 'asked once per run: a no is remembered, a yes leaves the loop to apply');
+  assert.ok(calls.check >= 4);
+});
+
 test('menu without a keyboard never refreshes', async () => {
   const { deps } = setup();
   const s = scripted(['6']);

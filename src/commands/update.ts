@@ -4,7 +4,7 @@ import * as log from '../ui/log.ts';
 import { cachePath, remainingBytes } from '../net/download.ts';
 import { workDirFor, legacyWorkDirFor, recover, pendingJournal, removeLeftovers } from '../disk/swap.ts';
 import { acquireLock, legacyInstanceRunning } from '../disk/lock.ts';
-import { runningWow } from '../disk/platform.ts';
+import { checkWowClosed } from './running.ts';
 import { colorOn, paint, sym } from '../ui/term.ts';
 import { UsageError } from '../errors.ts';
 import { makePlan } from '../engine/plan.ts';
@@ -71,11 +71,7 @@ export async function update(opts: Options, deps: Deps): Promise<number> {
     return errored().length ? 1 : 0;
   }
 
-  const running = (deps.runningWow ?? runningWow)();
-  if (running.length && !opts.force) {
-    throw new UsageError(`World of Warcraft is running (${running.join(', ')}). Close the game first, or pass --force.`);
-  }
-  if (running.length) log.warn(`WoW is running (${running.join(', ')}); continuing because of --force. /reload or restart the game afterwards.`);
+  await checkWowClosed(opts, deps);
 
   let release: ReturnType<typeof acquireLock>;
   try {

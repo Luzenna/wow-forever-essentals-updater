@@ -28,4 +28,6 @@ export interface Source {
   name?: string;
   /** Latest stable release for the item, or null when the source has none. */
   latest(item: Item): Promise<Release | null>;
+  /** Forget what was fetched, so the next latest() looks again (the menu does this on its timer). */
+  invalidate?(): void;
 }

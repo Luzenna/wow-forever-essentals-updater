@@ -60,6 +60,10 @@ export class WagoSource {
     this.pages = new Map();
   }
 
+  invalidate(): void {
+    this.pages.clear();
+  }
+
   /** One page request per addon per run, shared by whatever asks. A failure must not stick. */
   #release(slug: string): Promise<WagoRelease | null> {
     let p = this.pages.get(slug);

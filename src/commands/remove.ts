@@ -9,7 +9,8 @@ import { loadCustom, removeCustom } from '../catalog/custom.ts';
 import { findChild } from '../disk/fold.ts';
 import { swapIn, workDirFor, legacyWorkDirFor, pendingJournal } from '../disk/swap.ts';
 import { acquireLock } from '../disk/lock.ts';
-import { runningWow, devCopyReason } from '../disk/platform.ts';
+import { devCopyReason } from '../disk/platform.ts';
+import { checkWowClosed } from './running.ts';
 import { paint } from '../ui/term.ts';
 import { makeAsk } from '../ui/ask.ts';
 import { UsageError } from '../errors.ts';
@@ -86,10 +87,7 @@ export async function uninstall(opts: Options, deps: Deps): Promise<number> {
   }
 
   // Check the game and ask before locking, but do the real work from a fresh look at the state under the lock.
-  const running = (deps.runningWow ?? runningWow)();
-  if (running.length && !opts.force) {
-    throw new UsageError(`World of Warcraft is running (${running.join(', ')}). Close the game first, or pass --force.`);
-  }
+  await checkWowClosed(opts, deps);
   if (!opts.yes) {
     if (!(deps.tty ?? process.stdin.isTTY)) throw new UsageError('remove needs --yes when there is no terminal to ask in');
     const ans = (await makeAsk(deps)(`Remove ${first.go.map((j) => j.group.title).join(', ')}? Your settings in WTF are kept. [y/N] `)).trim();

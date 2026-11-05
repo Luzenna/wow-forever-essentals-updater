@@ -8,6 +8,7 @@ import * as semver from './semver.ts';
 import * as log from './ui/log.ts';
 import { HttpError, USER_AGENT, withRetry } from './net/http.ts';
 import { download } from './net/download.ts';
+import type { SelfUpdater } from './types.ts';
 
 export const SELF_REPO = 'Luzenna/wow-forever-essentals-updater';
 
@@ -17,6 +18,40 @@ export function selfAssetName(platform: NodeJS.Platform = process.platform, arch
   if (platform === 'win32') return 'wow-forever-essentals-updater.exe';
   if (platform === 'linux') return 'wow-forever-essentals-updater-linux-x64';
   return null;
+}
+
+interface SelfRelease {
+  tag_name: string;
+  draft?: boolean;
+  prerelease?: boolean;
+  assets: { name: string; size: number; browser_download_url: string; digest?: string | null }[];
+}
+
+/** The newest release of this tool, with the version it carries when that is newer than `version`. */
+async function fetchLatest(o: { version: string; apiBase?: string; fetchImpl?: typeof fetch }): Promise<{ rel: SelfRelease; latest: string } | null> {
+  const doFetch = o.fetchImpl ?? fetch;
+  const api = `${o.apiBase ?? 'https://api.github.com'}/repos/${SELF_REPO}/releases/latest`;
+
+  const res = await withRetry(async () => {
+    const r = await doFetch(api, {
+      headers: { Accept: 'application/vnd.github+json', 'User-Agent': USER_AGENT },
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!r.ok) throw new HttpError(api, r.status, r.headers);
+    return r;
+  }, { retries: 1 });
+  const rel = (await res.json()) as SelfRelease;
+
+  const latest = semver.clean(rel.tag_name);
+  if (!latest || rel.draft || rel.prerelease) return null;
+  if (semver.compare(latest, o.version) <= 0) return null;
+  return { rel, latest };
+}
+
+/** Whether a newer version of this tool exists for this platform; downloads nothing. */
+export async function newerSelfVersion(o: { version: string; platform?: NodeJS.Platform; arch?: string; apiBase?: string; fetchImpl?: typeof fetch }): Promise<string | null> {
+  if (!selfAssetName(o.platform, o.arch)) return null;
+  return (await fetchLatest(o))?.latest ?? null;
 }
 
 export async function selfUpdate(o: {
@@ -31,27 +66,9 @@ export async function selfUpdate(o: {
 }): Promise<'updated' | 'current' | 'skipped'> {
   const name = selfAssetName(o.platform, o.arch);
   if (!name) return 'skipped';
-  const doFetch = o.fetchImpl ?? fetch;
-  const api = `${o.apiBase ?? 'https://api.github.com'}/repos/${SELF_REPO}/releases/latest`;
-
-  const res = await withRetry(async () => {
-    const r = await doFetch(api, {
-      headers: { Accept: 'application/vnd.github+json', 'User-Agent': USER_AGENT },
-      signal: AbortSignal.timeout(15_000),
-    });
-    if (!r.ok) throw new HttpError(api, r.status, r.headers);
-    return r;
-  }, { retries: 1 });
-  const rel = (await res.json()) as {
-    tag_name: string;
-    draft?: boolean;
-    prerelease?: boolean;
-    assets: { name: string; size: number; browser_download_url: string; digest?: string | null }[];
-  };
-
-  const latest = semver.clean(rel.tag_name);
-  if (!latest || rel.draft || rel.prerelease) return 'current';
-  if (semver.compare(latest, o.version) <= 0) return 'current';
+  const found = await fetchLatest(o);
+  if (!found) return 'current';
+  const { rel, latest } = found;
 
   const a = rel.assets.find((x) => x.name === name);
   const sha = a?.digest && /^sha256:([0-9a-f]{64})$/i.exec(a.digest)?.[1].toLowerCase();
@@ -114,6 +131,27 @@ export function cleanupOld(exe: string): void {
 
 /** Set in the environment of the restarted copy, which must not look for an update again. */
 export const RELAUNCHED = 'WFE_RELAUNCHED';
+
+/**
+ * What the menu uses to keep itself current while it stays open: packaged builds only. `apply` is the
+ * same update-and-restart as at startup, except that a copy that was itself just restarted may update again.
+ */
+export function menuSelfUpdate(version: string, cacheDir: string, isSea: boolean = sea.isSea()): SelfUpdater | undefined {
+  if (version === 'dev' || !isSea) return undefined;
+  return {
+    check: async () => {
+      try {
+        return await newerSelfVersion({ version });
+      } catch {
+        return null; // a failed look is not worth interrupting the menu
+      }
+    },
+    apply: () => {
+      const { [RELAUNCHED]: _drop, ...env } = process.env;
+      return trySelfUpdate(version, cacheDir, { env });
+    },
+  };
+}
 
 /**
  * The entry point cli.ts uses: packaged builds only, warns instead of throwing. After an update it starts

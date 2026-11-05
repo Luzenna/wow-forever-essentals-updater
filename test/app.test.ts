@@ -271,6 +271,25 @@ test('refuses to run while WoW is running unless --force', async () => {
   }
 });
 
+test('in a terminal a running WoW is a warning you can wave through, not a wall', async () => {
+  const w = await world(V1);
+  try {
+    const asked: string[] = [];
+    const answer = (a: string) => ({ ...w.deps, tty: true, runningWow: () => ['Wow.exe'], ask: async (q: string) => { asked.push(q); return a; } });
+    await assert.rejects(update({}, answer('n')), /World of Warcraft is running/);
+    await assert.rejects(update({}, answer('')), /World of Warcraft is running/, 'Enter means no');
+    // Unattended, nobody can say yes: --yes still refuses, without asking.
+    await assert.rejects(update({ yes: true }, answer('y')), /World of Warcraft is running/);
+    assert.equal(asked.length, 2, '--yes does not ask');
+    assert.equal(w.srv.stats.requests, 0, 'nothing was downloaded');
+    assert.equal(await update({}, answer('y')), 0, 'yes goes ahead');
+    assert.equal(asked.length, 3);
+    assert.ok(fs.existsSync(path.join(w.addons, 'Spoken/Core.lua')));
+  } finally {
+    await w.srv.close();
+  }
+});
+
 test('dry run downloads and changes nothing', async () => {
   const w = await world(V1);
   try {

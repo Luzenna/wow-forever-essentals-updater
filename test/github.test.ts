@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { GitHubSource, filterReleases, pickAsset } from '../src/sources/github.ts';
+import { MultiSource } from '../src/sources/multi.ts';
 import { buildCatalog } from '../src/catalog/catalog.ts';
 import type { Item, CatalogOptions } from '../src/catalog/catalog.ts';
 
@@ -130,4 +131,19 @@ test('a failed release fetch is retried on the next call, not cached', async () 
   const item = { id: 'a', tagMode: 'plain', assetPrefix: 'A' } as Item;
   await assert.rejects(src.latest(item));
   assert.equal((await src.latest(item))?.version, '1.0.0');
+});
+
+test('invalidate() makes the next latest() look again instead of reusing the fetched list', async () => {
+  let version = '1.0.0';
+  let calls = 0;
+  const rel = (v: string) => [{ tag_name: `v${v}`, draft: false, prerelease: false, assets: [{ name: `A-${v}.zip`, size: 1, browser_download_url: 'http://x/a.zip', digest: null }] }];
+  const fetchImpl = (async () => { calls++; return Response.json(rel(version)); }) as typeof fetch;
+  const multi = new MultiSource({ fetchImpl });
+  const item = { id: 'a', repo: 'o/r', tagMode: 'plain', owns: () => true } as unknown as Parameters<MultiSource['latest']>[0];
+  assert.equal((await multi.latest(item))?.version, '1.0.0');
+  version = '1.1.0';
+  assert.equal((await multi.latest(item))?.version, '1.0.0', 'cached within a run');
+  multi.invalidate();
+  assert.equal((await multi.latest(item))?.version, '1.1.0', 'looked again');
+  assert.equal(calls, 2);
 });

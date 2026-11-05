@@ -99,6 +99,12 @@ export class GitHubSource {
     this.recentCache = null;
   }
 
+  /** Drop the fetched lists; the next call asks GitHub again. */
+  invalidate(): void {
+    this.cache = null;
+    this.recentCache = null;
+  }
+
   /** Every release, paginated. */
   releases(): Promise<GhRelease[]> {
     // A failure must not stick: the menu keeps this source for the whole session.

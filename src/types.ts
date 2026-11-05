@@ -2,6 +2,12 @@
 import type { Source } from './sources/source.ts';
 import type { Env } from './detect/detect.ts';
 
+/** check: the newer version of this tool on GitHub, or null. apply: download it, swap it in and restart into it (returns only if that did not happen). */
+export interface SelfUpdater {
+  check(): Promise<string | null>;
+  apply(): Promise<void>;
+}
+
 export interface Deps {
   source: Source;
   configDir: string;
@@ -13,6 +19,8 @@ export interface Deps {
   tty?: boolean;
   /** desktop notification (the menu's refresh uses it); absent in tests */
   notify?: (title: string, body: string) => void;
+  /** this tool's own updates, for the menu's timer; only in the packaged executable */
+  selfUpdate?: SelfUpdater;
 }
 
 export interface Options {

@@ -51,7 +51,7 @@ What would you like to do?
     Quit
 ```
 
-- **Leave it open:** while the menu waits for a key it looks for new releases every 5 minutes and redraws the overview. When an addon gets a version it hasn't shown you yet, the terminal beeps and a desktop notification appears (a Windows toast, or `notify-send` on Linux/Steam Deck when installed). Each new version is announced once; without a keyboard (a pipe) there is no refresh.
+- **Leave it open:** while the menu waits for a key it looks for new releases and redraws the overview, every 5 minutes with a GitHub token and every 15 without one (GitHub allows 60 anonymous requests an hour). It also checks for a newer version of this tool: when one exists it beeps, notifies and asks "Update and restart now?"; yes downloads it and restarts into it, no is remembered for that version. When an addon gets a version it hasn't shown you yet, the terminal beeps and a desktop notification appears (a Windows toast, or `notify-send` on Linux/Steam Deck when installed). Each new version is announced once; without a keyboard (a pipe) there is no refresh.
 - **Install or update my addons** downloads only what changed, shows a progress bar per addon, and ends with a summary of what was updated and what failed.
 - **Choose which addons I want** is a checkbox list (arrows and Space, `a` for all/none, Enter to confirm, Esc to cancel). Choosing Spoken also asks whether to include the Zone and Book voices. Your choice is saved in the config, and addons you don't select are never touched.
 - **Add or remove addons...** adds any GitHub repo that publishes a release zip (see [Your own addons](#your-own-addons)), or uninstalls an addon.
@@ -86,7 +86,7 @@ From source (needs Node 24+): `npm install`, then `npm start`.
 **Flags:**
 - `--addons <path>`: use this AddOns folder.
 - `--yes`: never prompt (and skip the menu).
-- `--force`: install even while WoW is running.
+- `--force`: install even while WoW is running, without the question. In a terminal the tool asks "Continue anyway?" (default no); with `--yes` or no terminal it refuses unless you pass `--force`.
 - `--pin <version>`: with `install --only <item>`, install that exact version and hold it there. This also rolls back a bad update. `--unpin` releases the hold. Status shows "held at 1.4.0".
 - `--overwrite-dev`: replace (or remove) a folder that looks like your own working copy; see below.
 - `--no-self-update`: skip the check for a newer version of this tool. Normally `update`, `install` and the menu first look at this tool's GitHub releases and, if a newer one exists, download it (sha256-checked, and test-run before use) and replace the executable, then restart themselves into the new version with the same arguments, so you never keep running the old one. If anything fails, including the restart, it only prints a warning and carries on.
@@ -234,7 +234,7 @@ Sources plug in through `src/sources/source.ts`; `src/sources/wago.ts` is the Wa
 
 ## How it installs safely
 
-1. **WoW must be closed.** The tool refuses to run while `Wow*.exe` is running, including under Wine/Proton, unless you pass `--force`.
+1. **WoW should be closed.** While `Wow*.exe` is running (including under Wine/Proton) the tool warns that updates only show after /reload and that Windows may refuse to replace a file the game has open, and asks whether to continue (default no). With `--yes` or no terminal it refuses unless you pass `--force`.
 2. **Disk space is checked first**, for both the download cache and the AddOns drive.
 3. **Downloads resume and retry.** They resume with HTTP Range and retry with backoff.
 4. **Zips are unpacked into `Interface/.wow-forever-essentals-updater`**, on the same drive as AddOns. Paths are normalised (backslashes, wrapper folders, double nesting) and unsafe paths are refused.

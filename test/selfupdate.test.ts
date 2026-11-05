@@ -4,7 +4,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { selfUpdate, selfAssetName, swapExecutable, trySelfUpdate, RELAUNCHED } from '../src/selfupdate.ts';
+import { selfUpdate, selfAssetName, swapExecutable, trySelfUpdate, newerSelfVersion, menuSelfUpdate, RELAUNCHED } from '../src/selfupdate.ts';
 import type { spawnSync } from 'node:child_process';
 
 type Seams = NonNullable<Parameters<typeof trySelfUpdate>[2]>;
@@ -42,6 +42,22 @@ test('newer release replaces the executable and keeps the old one aside', async 
   assert.equal(r, 'updated');
   assert.equal(fs.readFileSync(exe, 'utf8'), 'new binary');
   assert.equal(fs.readFileSync(exe + '.old', 'utf8'), 'old');
+});
+
+test('newerSelfVersion only looks: it names the newer version and downloads nothing', async () => {
+  const seen: string[] = [];
+  const f = fakeFetch('v0.3.0', Buffer.from('n'));
+  const spy = (async (u: Parameters<typeof fetch>[0], i?: RequestInit) => { seen.push(String(u)); return f(u, i); }) as typeof fetch;
+  assert.equal(await newerSelfVersion({ version: '0.2.0', platform: 'linux', arch: 'x64', fetchImpl: spy }), '0.3.0');
+  assert.equal(await newerSelfVersion({ version: '0.3.0', platform: 'linux', arch: 'x64', fetchImpl: spy }), null);
+  assert.equal(await newerSelfVersion({ version: '0.1.0', platform: 'darwin', arch: 'arm64', fetchImpl: spy }), null, 'no build for this platform');
+  assert.ok(seen.every((u) => u.endsWith('/releases/latest')), 'only the release lookup, never the asset');
+});
+
+test('menuSelfUpdate exists only in the packaged build', () => {
+  assert.equal(menuSelfUpdate('dev', tmp(), true), undefined);
+  assert.equal(menuSelfUpdate('1.0.0', tmp(), false), undefined);
+  assert.ok(menuSelfUpdate('1.0.0', tmp(), true));
 });
 
 test('same or older release does nothing', async () => {
