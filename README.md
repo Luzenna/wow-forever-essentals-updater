@@ -116,6 +116,8 @@ Run `wow-forever-essentals-updater.exe` in a terminal, or double-click it. The t
 
 The first run copies `config.json` and `state.json` from the old `spoken-updater` folder, if there is one, so nothing needs redoing.
 
+When an addon "couldn't check for updates", the reason is shown on its row and appended to `errors.log` in the same folder (trimmed at 128 KB), with the time and the addon.
+
 ```json
 {
   "addons_path": "",

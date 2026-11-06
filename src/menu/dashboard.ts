@@ -22,7 +22,11 @@ export function rowFor(group: Group, selected: boolean, plans: Plan[]): Row {
   const dev = mine.find((p) => p.status === 'dev');
   if (dev) return { state: 'dev', version, note: 'developer copy, left alone', bytes: 0 };
   const bad = mine.find((p) => p.status === 'error' || (p.status === 'unavailable' && !p.item.optional));
-  if (bad) return { state: 'problem', version, note: "couldn't check for updates", bytes: 0 };
+  if (bad) {
+    // Say why when we know (rate limit, site down...), so a failed row is not a mystery.
+    const why = (bad.reason ?? '').replace(/\s+/g, ' ').trim();
+    return { state: 'problem', version, note: `couldn't check for updates${why ? `: ${why.length > 50 ? `${why.slice(0, 49)}…` : why}` : ''}`, bytes: 0 };
+  }
   const todo = mine.filter((p) => p.act && p.status !== 'current');
   const size = todo.reduce((n, p) => n + (p.release?.asset.size ?? 0), 0);
   const dl = size ? `  ${paint('dim', `${log.bytes(size)} to download`)}` : '';

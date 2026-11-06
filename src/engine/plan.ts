@@ -12,6 +12,7 @@ import { treeStats } from '../disk/tree.ts';
 import { devCopyReason } from '../disk/platform.ts';
 import { resolveAddons } from './addons-dir.ts';
 import type { Item } from '../catalog/catalog.ts';
+import { logError, describeError } from '../config/errorlog.ts';
 import type { Release } from '../sources/source.ts';
 import type { ItemState } from '../config/state.ts';
 import type { Options, Deps } from '../types.ts';
@@ -137,7 +138,8 @@ export async function makePlan(opts: Options, deps: Deps) {
       return p;
     } catch (e) {
       // One broken release (e.g. an unexpected asset layout) must not stop the others.
-      return { item, release: null, status: 'error', installed: null, reason: (e as Error).message, folders: [], diskBytes: 0, act: false } as Plan;
+      logError(deps.configDir, `check ${item.id}`, e);
+      return { item, release: null, status: 'error', installed: null, reason: describeError(e), folders: [], diskBytes: 0, act: false } as Plan;
     }
   }));
   return { cfg, addons, state, plans, custom, problems };
