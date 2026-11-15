@@ -153,3 +153,15 @@ test('Steam Deck: ~/.steam/steam symlinked to ~/.local/share/Steam gives one can
   assert.equal(found.length, 1);
   assert.equal(found[0].forever, true);
 });
+
+test('on Linux, ~/Applications is searched first and wins over other locations', () => {
+  const home = tmpDir();
+  const mk = (...p: string[]) => fs.mkdirSync(path.join(home, ...p), { recursive: true });
+  mk('Applications/World of Warcraft/_forever_/Interface/AddOns');
+  mk('.wine/drive_c/Program Files (x86)/World of Warcraft/_forever_/Interface/AddOns');
+  const env: Env = { platform: 'linux', home, drives: [], appData: null, runMedia: path.join(home, 'none'), registryInstallDirs: () => [] };
+  const found = detect({ clientFolder: '_forever_' }, env);
+  assert.equal(found[0].label, '~/Applications');
+  assert.equal(found[0].primary, true);
+  assert.ok(found.length >= 2 && !found[1].primary);
+});

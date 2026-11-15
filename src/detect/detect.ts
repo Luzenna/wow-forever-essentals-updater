@@ -35,6 +35,8 @@ export interface Candidate {
   version: string | null;
   /** confirmed Forever (1.60.x) by product.db or .build.info */
   forever: boolean;
+  /** found in the preferred location (~/Applications on Linux), which wins over every other source */
+  primary: boolean;
 }
 
 /** The client folder the Forever launcher creates. It is always looked at, whatever client_folder says. */
@@ -130,7 +132,7 @@ function readProducts(file: string) {
 }
 
 /** A WoW root plus what we know about its clients (folder -> version). */
-interface Root { root: string; label: string; clients: Map<string, string | null> }
+interface Root { root: string; label: string; clients: Map<string, string | null>; primary?: boolean }
 
 /**
  * Map a Windows path from product.db (e.g. "C:/Program Files (x86)/World of Warcraft")
@@ -189,17 +191,38 @@ export function winePrefixes(env: Env) {
   for (const b of [path.join(env.home, '.local/share/bottles/bottles'), path.join(env.home, '.var/app/com.usebottles.bottles/data/bottles/bottles')]) {
     for (const d of subdirs(b)) out.push({ prefix: d, label: `Bottles ${path.basename(d)}` });
   }
+  // Prefixes kept under ~/Applications (this or one level down).
+  const apps = primaryDir(env);
+  for (const d of [apps, ...subdirs(apps)]) out.push({ prefix: d, label: `Wine ${path.basename(d)}` });
   out.push({ prefix: path.join(env.home, '.wine'), label: 'Wine ~/.wine' });
   return out.filter((p) => isDir(path.join(p.prefix, 'drive_c')));
 }
 
+/** The preferred install location on Linux / Steam Deck: ~/Applications (a few levels deep). */
+export const primaryDir = (env: Env) => path.join(env.home, 'Applications');
+
+/** Directories under ~/Applications that look like a WoW root (hold a client folder or .build.info). */
+function applicationsRoots(env: Env, clientFolder: string): string[] {
+  const base = primaryDir(env);
+  const out: string[] = [];
+  const looksLikeRoot = (d: string) =>
+    !!findChild(d, '.build.info') || [FOREVER_FOLDER, clientFolder].some((f) => resolveFold(d, f).exists);
+  const walk = (d: string, depth: number) => {
+    if (looksLikeRoot(d)) { out.push(d); return; }
+    if (depth > 0) for (const s of subdirs(d)) walk(s, depth - 1);
+  };
+  walk(base, 3);
+  return out;
+}
+
 /** All plausible WoW roots, de-duplicated. */
-function findRoots(env: Env): Root[] {
+function findRoots(env: Env, clientFolder: string): Root[] {
   const roots = new Map<string, Root>();
+  let primary = false;
   const add = (dir: string | null, label: string, client?: { folder: string | null; version: string | null }) => {
     if (!dir || !isDir(dir)) return;
     const key = realKey(dir);
-    if (!roots.has(key)) roots.set(key, { root: path.resolve(dir), label, clients: new Map() });
+    if (!roots.has(key)) roots.set(key, { root: path.resolve(dir), label, clients: new Map(), primary });
     if (client?.folder) (roots.get(key) as Root).clients.set(client.folder, client.version);
   };
   const fromProductDb = (dbFile: string, mapLoc: (loc: string) => string | null, label: string) => {
@@ -227,6 +250,18 @@ function findRoots(env: Env): Root[] {
       }
     }
   } else {
+    // ~/Applications first: a plain install folder, or a Wine prefix kept there.
+    primary = true;
+    for (const d of applicationsRoots(env, clientFolder)) add(d, '~/Applications');
+    for (const { prefix } of winePrefixes(env).filter((p) => p.prefix.startsWith(primaryDir(env) + path.sep))) {
+      const db = resolveFold(prefix, 'drive_c/ProgramData/Battle.net/Agent/product.db');
+      if (db.exists) fromProductDb(db.path, (l) => winePath(prefix, l), '~/Applications');
+      for (const rel of ['Program Files (x86)/World of Warcraft', 'Program Files/World of Warcraft']) {
+        const r = resolveFold(prefix, 'drive_c', rel);
+        if (r.exists) add(r.path, '~/Applications');
+      }
+    }
+    primary = false;
     for (const { prefix, label } of winePrefixes(env)) {
       const db = resolveFold(prefix, 'drive_c/ProgramData/Battle.net/Agent/product.db');
       if (db.exists) fromProductDb(db.path, (l) => winePath(prefix, l), label);
@@ -254,7 +289,7 @@ function findRoots(env: Env): Root[] {
  */
 export function detect(opts: { clientFolder: string }, env: Env = realEnv()): Candidate[] {
   const out = new Map<string, Candidate>();
-  for (const r of findRoots(env)) {
+  for (const r of findRoots(env, opts.clientFolder)) {
     const folders = new Map([...r.clients].filter(([, v]) => isForeverVersion(v)));
     // _forever_ is always tried, and so is the configured client folder, so a renamed
     // launch folder works without a new release of this tool.
@@ -265,8 +300,8 @@ export function detect(opts: { clientFolder: string }, env: Env = realEnv()): Ca
       const addons = resolveFold(client.path, 'Interface', 'AddOns');
       const key = realKey(addons.path);
       if (out.has(key)) continue;
-      out.set(key, { addons: addons.path, exists: addons.exists, clientDir: client.path, label: r.label, version, forever: isForeverVersion(version) });
+      out.set(key, { addons: addons.path, exists: addons.exists, clientDir: client.path, label: r.label, version, forever: isForeverVersion(version), primary: !!r.primary });
     }
   }
-  return [...out.values()].sort((a, b) => Number(b.forever) - Number(a.forever) || Number(isForeverFolder(b)) - Number(isForeverFolder(a)));
+  return [...out.values()].sort((a, b) => Number(b.primary) - Number(a.primary) || Number(b.forever) - Number(a.forever) || Number(isForeverFolder(b)) - Number(isForeverFolder(a)));
 }
