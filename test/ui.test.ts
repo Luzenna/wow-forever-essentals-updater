@@ -61,3 +61,13 @@ test('dashboard rows describe each addon in plain words', () => {
   assert.match(stripAnsi(up.note), /update available.*1\.0\.0/);
   assert.equal(rowFor(g, true, [plan({ status: 'error' })]).state, 'problem');
 });
+
+test('growSequence asks the old Windows console for 120x40, and leaves everything else alone', async () => {
+  const { growSequence } = await import('../src/ui/window.ts');
+  assert.equal(growSequence({ columns: 80, rows: 25 }, {}, 'win32'), '\x1b[8;40;120t');
+  assert.equal(growSequence({ columns: 200, rows: 25 }, {}, 'win32'), '\x1b[8;40;200t', 'never shrinks');
+  assert.equal(growSequence({ columns: 130, rows: 50 }, {}, 'win32'), '', 'already big enough');
+  assert.equal(growSequence({ columns: 80, rows: 25 }, { WT_SESSION: 'x' }, 'win32'), '', 'Windows Terminal ignores it');
+  assert.equal(growSequence({ columns: 80, rows: 25 }, { WFE_NO_RESIZE: '1' }, 'win32'), '', 'opt-out');
+  assert.equal(growSequence({ columns: 80, rows: 25 }, {}, 'linux'), '', 'Steam Deck / Linux');
+});

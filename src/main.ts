@@ -4,6 +4,7 @@
 import * as log from './ui/log.ts';
 import { UsageError } from './errors.ts';
 import { main } from './cli.ts';
+import { growWindow } from './ui/window.ts';
 
 /** Keep the console window open briefly (Steam shortcut / double-click). */
 async function pause() {
@@ -24,6 +25,7 @@ async function pause() {
 // No top-level await: the single-executable build bundles this file as CommonJS.
 async function run() {
   const argv = process.argv.slice(2);
+  growWindow();
   let code: number | undefined;
   try {
     code = await main(argv);

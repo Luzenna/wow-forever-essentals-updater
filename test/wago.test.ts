@@ -129,6 +129,16 @@ test('a "-forever" label suffix is the flavor, not part of the version', async (
   }
 });
 
+test('a label that is the zip file name ("DungeonJournal2.1.6.zip") reads as its version', async () => {
+  const w = await fakeWago({ 'dungeon-journal': { folders: ['ForeverDungeonJournal'], label: 'DungeonJournal2.1.6.zip' } });
+  try {
+    const src = new WagoSource({ base: w.url, retry: { retries: 0 } });
+    assert.equal((await src.latest(wagoItem('dungeonjournal', 'dungeon-journal')))?.version, '2.1.6');
+  } finally {
+    await w.close();
+  }
+});
+
 test('WagoSource: no forever build is "no release", an unknown addon and a pin are plain errors', async () => {
   const w = await fakeWago({ old: { folders: ['Old'], label: '3', noForever: true }, baganator: { folders: ['Baganator'], label: '839' } });
   try {

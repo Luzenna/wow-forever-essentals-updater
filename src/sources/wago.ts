@@ -98,8 +98,9 @@ export class WagoSource {
     const r = await this.#release(slug);
     if (!r?.label || !r.download_link) return null;
 
-    // "v1.2.62" -> 1.2.62, and "13.16.2-forever" -> 13.16.2 (the flavor name is not part of the version the .toc carries).
-    const clean = (s: string) => s.trim().replace(/^v(?=\d)/i, '').replace(/-forever$/i, '');
+    // "v1.2.62" -> 1.2.62, "13.16.2-forever" -> 13.16.2 (the flavor name is not part of the version the .toc carries),
+    // and a label that is the file name, "DungeonJournal2.1.6.zip" -> 2.1.6.
+    const clean = (s: string) => s.trim().replace(/\.zip$/i, '').replace(/^[a-z][a-z _-]*(?=v?\d)/i, '').replace(/^v(?=\d)/i, '').replace(/-forever$/i, '');
     const version = clean(r.label);
     if (!semver.valid(version, { loose: true })) throw new Error(`${slug} on Wago: version "${r.label}" is not a version number`);
     // Wago's page only ever offers the newest release.
