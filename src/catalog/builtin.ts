@@ -44,14 +44,8 @@ export const BUILTIN: AddonEntry[] = [
   { id: 'journalator', title: 'Journalator', blurb: 'auction, crafting, quest and loot statistics (works with Auctionator)', wago: 'journalator', folders: ['Journalator', 'Journalator_Display', 'Journalator_OptionsUI', 'Journalator_Statistics'], optIn: true },
   { id: 'chattynator', title: 'Chattynator', blurb: 'chat window replacement', wago: 'chattynator', folders: ['Chattynator'], optIn: true },
   { id: 'platynator', title: 'Platynator', blurb: 'configurable nameplates', wago: 'platynator', folders: ['Platynator'], optIn: true },
-  // TEMPORARY: only on CurseForge, and its author (Zerkaa) has switched off third-party downloads there, so
-  // there is no source to ask. This pins the one file below (size and sha256 checked) and never updates
-  // by itself. Replace with a real source if the author allows it. See src/sources/fixed.js.
-  {
-    id: 'whatstraining', title: "What's Training", blurb: 'every spell your class can learn, with trainer prices (fixed version 1.1.1)', folders: ['WhatsTraining'], optIn: true,
-    url: { version: '1.1.1', href: 'https://mediafilez.forgecdn.net/files/9050/658/WhatsTraining-1.1.1.zip', size: 57758, sha256: '687f2b648afb3795e5b5651af05f2ac6af9355ed42114fe319fd77121668d0ab' },
-  },
-  // Forever Guide (LFYZ) is only on CurseForge, so like What's Training it is one pinned file (size and
+  { id: 'whatstraining', title: "What's Training", blurb: 'every spell your class can learn, with trainer prices', repo: 'fusionpit/WhatsTraining', folders: ['WhatsTraining'], optIn: true },
+  // Forever Guide (LFYZ) is only on CurseForge, where third-party downloads are off, so it is one pinned file (size and
   // sha256 checked) that never updates by itself. Re-pin it by editing the entry when a new file comes out.
   {
     id: 'foreverguide', title: 'Forever Guide', blurb: 'dungeon quests, boss loot, recipes and books in one window (fixed version 1.39.24)', folders: ['ForeverGuide'], optIn: true,

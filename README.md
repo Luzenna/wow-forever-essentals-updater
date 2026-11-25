@@ -21,7 +21,9 @@ Optional extras, unticked until you pick them in *Choose which addons I want*:
 | **Chattynator** | chat window replacement | [Wago Addons](https://addons.wago.io/addons/chattynator) |
 | **Platynator** | configurable nameplates | [Wago Addons](https://addons.wago.io/addons/platynator) |
 | **Enhance QoL** | many small quality-of-life options in one addon (17 folders, about 16 MB) | [Wago Addons](https://addons.wago.io/addons/eqol) |
-| **What's Training** | every spell your class can learn, with trainer prices | [CurseForge](https://www.curseforge.com/wow/addons/whats-training-forever), fixed version only (see below) |
+| **What's Training** | every spell your class can learn, with trainer prices | [GitHub](https://github.com/fusionpit/WhatsTraining) |
+| **Dungeon Journal** | boss, loot and quest journal for every dungeon | [Wago Addons](https://addons.wago.io/addons/dungeon-journal) |
+| **Forever Guide** | dungeon quests, boss loot, recipes and books in one window | [CurseForge](https://www.curseforge.com/wow/addons/forever-guide), fixed version only (see below) |
 
 It downloads only what changed. If everything is already current, it downloads nothing and changes no files.
 
@@ -230,7 +232,7 @@ every line would be voiced twice. Upstream's empty placeholder folders (e.g. the
 - This depends on how Wago's page is built. If Wago changes it, the affected addons fail with a message saying so, and the rest carry on.
 - Wago's `robots.txt` asks automated clients to stay out of `/download/`. To learn a zip's size this tool sends one small HEAD request (no file) to that path per Wago addon each time it checks, plus one page request; the zip itself comes from Wago's CDN. Only addons you have selected are checked. Don't select more than you use.
 
-**What's Training (temporary).** It is only on CurseForge, and its author has switched off third-party downloads there, so there is no source to ask for new releases. For now the tool installs one fixed file, version 1.1.1, from a fixed URL, and checks it against a recorded size and sha256. It does not look for newer versions: when the author releases one, the entry in `src/catalog/builtin.ts` has to be updated by hand. This is a stop-gap until the author allows third-party downloads or publishes GitHub releases.
+**Forever Guide (fixed version).** It is only on CurseForge, where third-party downloads are off, so there is no source to ask for new releases. The tool installs one fixed file, version 1.39.24, from a fixed URL, and checks it against a recorded size and sha256. It does not look for newer versions: when the author releases one, the entry in `src/catalog/builtin.ts` has to be updated by hand.
 
 Sources plug in through `src/sources/source.ts`; `src/sources/wago.ts` is the Wago one and `src/sources/fixed.ts` the fixed-URL one.
 

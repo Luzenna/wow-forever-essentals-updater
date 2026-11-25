@@ -1,4 +1,4 @@
-// An addon pinned to one file at a fixed URL (What's Training, for now): no network to
+// An addon pinned to one file at a fixed URL (Forever Guide, for now): no network to
 // find the release, the download is verified against the pinned size and sha256.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -16,26 +16,26 @@ import { buildCatalog } from '../src/catalog/catalog.ts';
 import { DEFAULT_SELECTED } from '../src/catalog/builtin.ts';
 
 const opts = { language: 'enUS', includeZones: false, includeBooks: false };
-const builtIn = () => buildCatalog({ ...opts, selected: ['whatstraining'] })[0];
+const builtIn = () => buildCatalog({ ...opts, selected: ['foreverguide'] })[0];
 
-test("What's Training is a built-in, opt-in, pinned to one file with its size and sha256", () => {
-  assert.ok(!DEFAULT_SELECTED.includes('whatstraining'), 'opt-in');
+test("Forever Guide is a built-in, opt-in, pinned to one file with its size and sha256", () => {
+  assert.ok(!DEFAULT_SELECTED.includes('foreverguide'), 'opt-in');
   const item = builtIn();
-  assert.equal(item.id, 'whatstraining');
+  assert.equal(item.id, 'foreverguide');
   assert.ok(item.url && !item.wago && !item.repo);
-  assert.deepEqual(item.folders, ['WhatsTraining']);
+  assert.deepEqual(item.folders, ['ForeverGuide']);
   const rel = fixedRelease(item);
-  assert.equal(rel.version, '1.1.1');
-  assert.equal(rel.asset.name, 'WhatsTraining-1.1.1.zip');
-  assert.equal(rel.asset.size, 57758);
+  assert.equal(rel.version, '1.39.24');
+  assert.equal(rel.asset.name, 'ForeverGuide-1.39.24.zip');
+  assert.equal(rel.asset.size, 18201517);
   assert.match(rel.asset.sha256 ?? '', /^[0-9a-f]{64}$/);
   assert.equal(new URL(rel.asset.url).protocol, 'https:');
 });
 
 test('a fixed file cannot be pinned to another version, and a missing entry is an error', () => {
   const item = builtIn();
-  assert.equal(fixedRelease({ ...item, pin: 'v1.1.1' }).version, '1.1.1');
-  assert.throws(() => fixedRelease({ ...item, pin: '1.0.0' }), /only available as 1\.1\.1, so 1\.0\.0 cannot be pinned/);
+  assert.equal(fixedRelease({ ...item, pin: 'v1.39.24' }).version, '1.39.24');
+  assert.throws(() => fixedRelease({ ...item, pin: '1.0.0' }), /only available as 1\.39\.24, so 1\.0\.0 cannot be pinned/);
   assert.throws(() => fixedRelease({ ...item, url: undefined }), /no fixed file/);
 });
 
@@ -45,25 +45,25 @@ async function world(served: Buffer, pin: { sha256?: string } = {}) {
   const addons = path.join(home, 'wow', '_classic_beta_', 'Interface', 'AddOns');
   fs.mkdirSync(addons, { recursive: true });
   const configDir = path.join(home, 'config');
-  saveConfig(configDir, { ...DEFAULT_CONFIG, addons_path: addons, selected: ['whatstraining'] });
-  const srv = await serve({ '/files/WhatsTraining-1.1.1.zip': served });
+  saveConfig(configDir, { ...DEFAULT_CONFIG, addons_path: addons, selected: ['foreverguide'] });
+  const srv = await serve({ '/files/ForeverGuide-1.39.24.zip': served });
   const real = new MultiSource({ retry: { retries: 0 } });
   const source: Source = {
     name: 'fixed',
-    latest: (item) => real.latest({ ...item, url: { version: '1.1.1', href: `${srv.url}/files/WhatsTraining-1.1.1.zip`, size: served.length, sha256: pin.sha256 ?? sha256(served) } }),
+    latest: (item) => real.latest({ ...item, url: { version: '1.39.24', href: `${srv.url}/files/ForeverGuide-1.39.24.zip`, size: served.length, sha256: pin.sha256 ?? sha256(served) } }),
   };
   return { addons, configDir, srv, deps: { source, configDir, cacheDir: path.join(home, 'cache'), runningWow: () => [], tty: false } };
 }
 
-const ZIP = makeZip({ 'WhatsTraining/WhatsTraining.toc': toc('1.1.1', '16001'), 'WhatsTraining/Core.lua': 'x' });
+const ZIP = makeZip({ 'ForeverGuide/ForeverGuide.toc': toc('1.39.24', '16001'), 'ForeverGuide/Core.lua': 'x' });
 
 test('installs the pinned file, then reads as current without downloading again', async () => {
   const w = await world(ZIP);
   try {
     assert.equal(await update({ yes: true }, w.deps), 0);
-    assert.deepEqual(fs.readdirSync(w.addons), ['WhatsTraining']);
-    const st = loadState(w.configDir).installs[stateKey(w.addons)].whatstraining;
-    assert.equal(st.version, '1.1.1');
+    assert.deepEqual(fs.readdirSync(w.addons), ['ForeverGuide']);
+    const st = loadState(w.configDir).installs[stateKey(w.addons)].foreverguide;
+    assert.equal(st.version, '1.39.24');
     assert.equal(st.sha256, sha256(ZIP));
     const requests = w.srv.stats.requests;
     assert.deepEqual((await makePlan({}, w.deps)).plans.map((p) => p.status), ['current']);
