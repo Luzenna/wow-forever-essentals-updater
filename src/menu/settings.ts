@@ -1,4 +1,4 @@
-// The Settings screens: AddOns folder, Spoken language and voice packs.
+// The Settings screens: AddOns folder, Spoken language and voice packs, the running-WoW check.
 import * as log from '../ui/log.ts';
 import type { Deps } from '../types.ts';
 import type { IO } from '../ui/prompts.ts';
@@ -44,6 +44,17 @@ async function pickLanguage(deps: Deps, io: IO) {
   log.info(`${paint('green', sym().ok)} Spoken voice language: ${language}`);
 }
 
+async function toggleRunningCheck(deps: Deps, io: IO) {
+  const cfg = loadConfig(deps.configDir);
+  const picked = await choose(`When WoW is running (now: ${cfg.check_wow_running ? 'ask first' : 'install anyway'})`, [
+    { value: 'off', label: 'Install anyway', hint: 'updates show up after /reload or a restart' },
+    { value: 'on', label: 'Ask first', hint: 'warn, and refuse when there is no one to ask' },
+  ], io);
+  if (picked === null) return;
+  saveConfig(deps.configDir, { ...cfg, check_wow_running: picked === 'on' });
+  log.info(`${paint('green', sym().ok)} ${picked === 'on' ? 'I will ask before installing while WoW is running.' : 'I will install even while WoW is running.'}`);
+}
+
 export async function settings(deps: Deps, io: IO) {
   for (;;) {
     clearScreen(io.output);
@@ -51,10 +62,12 @@ export async function settings(deps: Deps, io: IO) {
       { value: 'folder', label: 'WoW AddOns folder', hint: 'where addons are installed' },
       { value: 'language', label: 'Spoken voice language', hint: 'extra languages for the voiceovers' },
       { value: 'voices', label: 'Spoken voice packs', hint: 'zone and book voices (about 470 MB each)' },
+      { value: 'running', label: 'Check if WoW is running', hint: 'off: install anyway' },
       { value: 'back', label: 'Back' },
     ], io);
     if (what === 'folder') await pickAddonsFolder(deps, io);
     else if (what === 'language') await pickLanguage(deps, io);
+    else if (what === 'running') await toggleRunningCheck(deps, io);
     else if (what === 'voices') await pickVoicePacks(deps, io);
     else return;
   }

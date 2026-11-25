@@ -50,7 +50,7 @@ Options:
   --lang <code>     also install voice packs in this language (e.g. frFR, deDE)
   --dry-run         show what update would do, change nothing
   --yes, -y         never ask questions (for shortcuts and scripts)
-  --force           install even while WoW is running
+  --force           with the WoW-running check on, install anyway
   --pin <version>   with install --only <item>: install that version and hold it there
   --unpin           with install --only <item>: stop holding the version
   --overwrite-dev   replace a folder that looks like your own working copy (a link or a .git folder)

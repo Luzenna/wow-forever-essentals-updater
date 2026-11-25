@@ -330,7 +330,9 @@ test('remove deletes only that addon, keeps WTF, and forgets it', async () => {
 
     await assert.rejects(uninstall({ only: ['nodesight'] }, w.deps), /needs --yes/, 'no terminal to ask in');
     await assert.rejects(uninstall({ only: ['nope'], yes: true }, w.deps), /unknown addon/);
+    saveConfig(w.configDir, { ...loadConfig(w.configDir), check_wow_running: true });
     await assert.rejects(uninstall({ only: ['nodesight'], yes: true }, { ...w.deps, runningWow: () => ['Wow.exe'] }), /is running/);
+    saveConfig(w.configDir, { ...loadConfig(w.configDir), check_wow_running: false });
     assert.ok(fs.existsSync(path.join(w.addons, 'NodeSight')));
 
     assert.equal(await uninstall({ only: ['nodesight', 'cool-addon'], yes: true }, w.deps), 0);

@@ -88,7 +88,7 @@ From source (needs Node 24+): `npm install`, then `npm start`.
 **Flags:**
 - `--addons <path>`: use this AddOns folder.
 - `--yes`: never prompt (and skip the menu).
-- `--force`: install even while WoW is running, without the question. In a terminal the tool asks "Continue anyway?" (default no); with `--yes` or no terminal it refuses unless you pass `--force`.
+- `--force`: only matters when `check_wow_running` is on: install even while WoW is running, without the question. In a terminal the tool asks "Continue anyway?" (default no); with `--yes` or no terminal it refuses unless you pass `--force`.
 - `--pin <version>`: with `install --only <item>`, install that exact version and hold it there. This also rolls back a bad update. `--unpin` releases the hold. Status shows "held at 1.4.0".
 - `--overwrite-dev`: replace (or remove) a folder that looks like your own working copy; see below.
 - `--no-self-update`: skip the check for a newer version of this tool. Normally `update`, `install` and the menu first look at this tool's GitHub releases and, if a newer one exists, download it (sha256-checked, and test-run before use) and replace the executable, then restart themselves into the new version with the same arguments, so you never keep running the old one. If anything fails, including the restart, it only prints a warning and carries on.
@@ -129,6 +129,7 @@ When an addon "couldn't check for updates", the reason is shown on its row and a
   "include_books": true,
   "github_token": "",
   "keep_downloads": false,
+  "check_wow_running": false,
   "selected": ["spoken", "luzenna-forever", "nodesight", "dialogueui"],
   "pinned": {}
 }
@@ -140,6 +141,7 @@ When an addon "couldn't check for updates", the reason is shown on its row and a
 - `include_zones` / `include_books`: the Spoken Zones and Books modules and their voice packs.
 - `github_token`: optional, only needed if you hit GitHub's rate limit of 60 requests an hour (one request per addon repo per run). Takes `WFE_GITHUB_TOKEN` or `GITHUB_TOKEN` from the environment too (`SPOKEN_GITHUB_TOKEN` still works).
 - `pinned`: addon item ids held at a version, e.g. `{ "nodesight": "1.4.0" }`. `install --only <id> --pin <version>` writes it.
+- `check_wow_running`: off by default, so the tool installs even while WoW is running (updates show up after /reload or a restart). Turn it on, or use Settings > Check if WoW is running, to get the warning and question described under Safety. Also in Settings.
 - `keep_downloads`: keep zips after a successful install. By default they are deleted to save space, but kept after a failure so a retry doesn't download them again.
 
 `state.json`, next to the config, records what was installed. Each folder's `.toc` is the source of truth. An item is reinstalled if:
@@ -238,7 +240,7 @@ Sources plug in through `src/sources/source.ts`; `src/sources/wago.ts` is the Wa
 
 ## How it installs safely
 
-1. **WoW should be closed.** While `Wow*.exe` is running (including under Wine/Proton) the tool warns that updates only show after /reload and that Windows may refuse to replace a file the game has open, and asks whether to continue (default no). With `--yes` or no terminal it refuses unless you pass `--force`.
+1. **WoW should be closed (optional check, off by default).** With `check_wow_running` on and `Wow*.exe` running (including under Wine/Proton) the tool warns that updates only show after /reload and that Windows may refuse to replace a file the game has open, and asks whether to continue (default no). With `--yes` or no terminal it refuses unless you pass `--force`.
 2. **Disk space is checked first**, for both the download cache and the AddOns drive.
 3. **Downloads resume and retry.** They resume with HTTP Range and retry with backoff.
 4. **Zips are unpacked into `Interface/.wow-forever-essentals-updater`**, on the same drive as AddOns. Paths are normalised (backslashes, wrapper folders, double nesting) and unsafe paths are refused.

@@ -15,6 +15,8 @@ export interface Config {
   github_token: string;
   /** keep zips in the cache after a successful install */
   keep_downloads: boolean;
+  /** refuse or ask before installing while WoW is running (off: install anyway) */
+  check_wow_running: boolean;
   /** addon group ids to install and update (built-in ids, plus ids from addons.json) */
   selected: string[];
   /** item id -> version to hold the addon at */
@@ -29,6 +31,7 @@ export const DEFAULT_CONFIG: Config = {
   include_books: true,
   github_token: '',
   keep_downloads: false,
+  check_wow_running: false,
   selected: DEFAULT_SELECTED,
   pinned: {},
 };

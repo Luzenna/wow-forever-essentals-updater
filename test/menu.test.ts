@@ -146,13 +146,27 @@ test('menu: changing another addon does not drag you through the Spoken voice pa
 
 test('menu: the Spoken voice packs can be changed later under Settings', async () => {
   const { configDir, deps } = setup();
-  // Settings (5) > Spoken voice packs (3): toggle Books off, confirm; Settings > Back (4); Exit.
-  const s = scripted(['5', '3', '2', '', '4', '6']);
+  // Settings (5) > Spoken voice packs (3): toggle Books off, confirm; Settings > Back (5); Exit.
+  const s = scripted(['5', '3', '2', '', '5', '6']);
   await runMenu({}, deps, s.io);
   const cfg = loadConfig(configDir);
   assert.equal(cfg.include_books, false);
   assert.equal(cfg.include_zones, true);
   assert.equal(s.left(), 0);
+});
+
+test('menu: the running-WoW check is off by default and can be switched on under Settings', async () => {
+  const { configDir, deps } = setup();
+  assert.equal(loadConfig(configDir).check_wow_running, false);
+  // Settings (5) > Check if WoW is running (4) > Ask first (2); Settings > Back (5); Exit (6).
+  const s = scripted(['5', '4', '2', '5', '6']);
+  await runMenu({}, deps, s.io);
+  assert.equal(loadConfig(configDir).check_wow_running, true);
+  assert.equal(s.left(), 0);
+  // And back off: Install anyway (1).
+  const s2 = scripted(['5', '4', '1', '5', '6']);
+  await runMenu({}, deps, s2.io);
+  assert.equal(loadConfig(configDir).check_wow_running, false);
 });
 
 /** Wait until a condition holds, so a key is never pressed before the prompt that should get it. */

@@ -259,9 +259,21 @@ test('folders installed by another manager are adopted when already current', as
   }
 });
 
+test('by default a running WoW does not stop an install, not even unattended', async () => {
+  const w = await world(V1);
+  try {
+    assert.equal(loadConfig(w.configDir).check_wow_running, false);
+    assert.equal(await update({ yes: true }, { ...w.deps, runningWow: () => ['Wow.exe'] }), 0);
+    assert.ok(fs.existsSync(path.join(w.addons, 'Spoken/Core.lua')));
+  } finally {
+    await w.srv.close();
+  }
+});
+
 test('refuses to run while WoW is running unless --force', async () => {
   const w = await world(V1);
   try {
+    saveConfig(w.configDir, { ...loadConfig(w.configDir), check_wow_running: true });
     const deps = { ...w.deps, runningWow: () => ['WowB.exe'] };
     await assert.rejects(update({ yes: true }, deps), /World of Warcraft is running/);
     assert.equal(w.srv.stats.requests, 0);
@@ -274,6 +286,7 @@ test('refuses to run while WoW is running unless --force', async () => {
 test('in a terminal a running WoW is a warning you can wave through, not a wall', async () => {
   const w = await world(V1);
   try {
+    saveConfig(w.configDir, { ...loadConfig(w.configDir), check_wow_running: true });
     const asked: string[] = [];
     const answer = (a: string) => ({ ...w.deps, tty: true, runningWow: () => ['Wow.exe'], ask: async (q: string) => { asked.push(q); return a; } });
     await assert.rejects(update({}, answer('n')), /World of Warcraft is running/);
