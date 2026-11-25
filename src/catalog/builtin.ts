@@ -51,6 +51,13 @@ export const BUILTIN: AddonEntry[] = [
     id: 'whatstraining', title: "What's Training", blurb: 'every spell your class can learn, with trainer prices (fixed version 1.1.1)', folders: ['WhatsTraining'], optIn: true,
     url: { version: '1.1.1', href: 'https://mediafilez.forgecdn.net/files/9050/658/WhatsTraining-1.1.1.zip', size: 57758, sha256: '687f2b648afb3795e5b5651af05f2ac6af9355ed42114fe319fd77121668d0ab' },
   },
+  // Forever Guide (LFYZ) is only on CurseForge, so like What's Training it is one pinned file (size and
+  // sha256 checked) that never updates by itself. Re-pin it by editing the entry when a new file comes out.
+  {
+    id: 'foreverguide', title: 'Forever Guide', blurb: 'dungeon quests, boss loot, recipes and books in one window (fixed version 1.39.24)', folders: ['ForeverGuide'], optIn: true,
+    url: { version: '1.39.24', href: 'https://mediafilez.forgecdn.net/files/9794/658/ForeverGuide-1.39.24.zip', size: 18201517, sha256: 'edafff5e62ebf839e4fd2d5c43152cd6edd967d8d161e0bfa56ba0a6926492b9' },
+  },
+  { id: 'dungeonjournal', title: 'Dungeon Journal', blurb: 'boss, loot and quest journal for every dungeon (by Exehn)', wago: 'dungeon-journal', folders: ['ForeverDungeonJournal'], optIn: true },
   {
     id: 'enhanceqol', title: 'Enhance QoL', blurb: 'many small quality-of-life options in one addon (17 folders)', wago: 'eqol', optIn: true,
     folders: ['EnhanceQoL', 'EnhanceQoLBags', 'EnhanceQoLChatSocial', 'EnhanceQoLClassBuffReminder', 'EnhanceQoLCooldownPanels', 'EnhanceQoLCooldownPulse', 'EnhanceQoLDamageMeter',
