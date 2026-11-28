@@ -14,6 +14,7 @@ import { paint, clearScreen, sym } from '../ui/term.ts';
 import { dashboard } from './dashboard.ts';
 import { selectAddons, manageAddons } from './addons.ts';
 import { settings } from './settings.ts';
+import { loadConfig } from '../config/config.ts';
 
 function defaultIO(deps: Deps): IO {
   return stdIO(makeAsk(deps));
@@ -38,12 +39,13 @@ const clock = () => new Date().toTimeString().slice(0, 5);
  * A newer version of this tool: beep, notify, and ask. Yes downloads it and restarts into it (that call only
  * returns when it did not happen). A no is remembered, so the same version is not asked about every 5 minutes.
  */
-async function offerSelfUpdate(deps: Deps, self: SelfUpdater, io: IO, version: string, declined: Set<string>) {
+async function offerSelfUpdate(deps: Deps, self: SelfUpdater, io: IO, version: string, declined: Set<string>, auto = false) {
   const next = await self.check();
   if (!next || declined.has(next)) return;
   io.output.write('');
   deps.notify?.('WoW Forever: updater update', `Version ${next} is available${version ? ` (you have ${version})` : ''}`);
-  const ans = (await io.ask(`
+  // Auto update mode does not ask. A failed try is remembered like a no, so it is not repeated every cycle.
+  const ans = auto ? 'y' : (await io.ask(`
   ${paint('yellow', `wow-forever-essentals-updater ${next} is available${version ? ` (you have ${version})` : ''}.`)}
   Update and restart now? [y/N] `)).trim();
   declined.add(next);
@@ -68,6 +70,8 @@ export async function runMenu(opts: Options, deps: Deps, ioOverride?: IO, versio
   const seen = new Set<string>();
   const declined = new Set<string>();
   let refreshed = false;
+  let canAuto = true; // auto update mode acts on the first look and on timer refreshes, not after what the user did
+  let notice = '';
   for (;;) {
     clearScreen(io.output);
     // The source remembers what it fetched; a refresh has to ask again to see anything new.
@@ -82,7 +86,28 @@ export async function runMenu(opts: Options, deps: Deps, ioOverride?: IO, versio
       log.info(`
   ${paint('yellow', `${sym().on} New: ${body}`)}`);
     }
-    if (refreshed && deps.selfUpdate) await offerSelfUpdate(deps, deps.selfUpdate, io, version, declined);
+    const auto = loadConfig(deps.configDir).auto_update;
+    if (notice) log.info(`
+  ${notice}`);
+    notice = '';
+    if (refreshed && deps.selfUpdate) await offerSelfUpdate(deps, deps.selfUpdate, io, version, declined, auto);
+    if (auto && canAuto && todo > 0) {
+      // Auto update mode: install everything that is new, then redraw once so the rows are current.
+      log.info(`
+  ${paint('yellow', `Auto update: installing ${todo} addon${todo === 1 ? '' : 's'}...`)}
+`);
+      let failed = '';
+      try {
+        failed = (await update({ ...opts, only: undefined, yes: true }, deps)) ? 'some addons failed, see Install or update' : '';
+      } catch (e) {
+        failed = (e as Error).message;
+      }
+      notice = failed ? paint('red', `Auto update: ${failed}`) : paint('green', `${sym().ok} Auto update: ${todo} addon${todo === 1 ? '' : 's'} installed at ${clock()}`);
+      deps.notify?.('WoW Forever: auto update', failed ? `Problem: ${failed}` : `${todo} addon${todo === 1 ? '' : 's'} installed`);
+      canAuto = false;
+      refreshed = false;
+      continue;
+    }
     if (refresh) log.info(`
   ${paint('dim', `Checked ${clock()}, checking again every ${Math.round(refresh / 60000) || '<1'} min`)}`);
     const updateHint = todo ? `${todo} to install or update${bytes ? ', ' + log.bytes(bytes) : ''}` : 'everything is up to date';
@@ -98,6 +123,7 @@ export async function runMenu(opts: Options, deps: Deps, ioOverride?: IO, versio
     ], io, timer.signal);
     clearTimeout(timeout);
     refreshed = timer.signal.aborted;
+    canAuto = refreshed;
     if (refreshed) continue;
     if (what === null || what === 'exit') {
       if (hasKeys(io)) log.info(`\n${paint('dim', 'Goodbye! Enjoy Azeroth.')}`);

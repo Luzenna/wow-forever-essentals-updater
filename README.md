@@ -130,6 +130,7 @@ When an addon "couldn't check for updates", the reason is shown on its row and a
   "github_token": "",
   "keep_downloads": false,
   "check_wow_running": false,
+  "auto_update": false,
   "selected": ["spoken", "luzenna-forever", "nodesight", "dialogueui"],
   "pinned": {}
 }
@@ -141,6 +142,7 @@ When an addon "couldn't check for updates", the reason is shown on its row and a
 - `include_zones` / `include_books`: the Spoken Zones and Books modules and their voice packs.
 - `github_token`: optional, only needed if you hit GitHub's rate limit of 60 requests an hour (one request per addon repo per run). Takes `WFE_GITHUB_TOKEN` or `GITHUB_TOKEN` from the environment too (`SPOKEN_GITHUB_TOKEN` still works).
 - `pinned`: addon item ids held at a version, e.g. `{ "nodesight": "1.4.0" }`. `install --only <id> --pin <version>` writes it.
+- `auto_update`: **auto update mode**, off by default (Settings > Auto update mode). While the menu is open, anything new is installed by itself, without asking: addon updates on the first look and on every timer refresh (every 5 minutes with a GitHub token, 15 without), and a newer version of this tool (which then restarts into the new version; packaged build only, and not with `--no-self-update`). It does nothing outside the menu. A failure is shown on the menu and sent as a desktop notification. If `check_wow_running` is on and WoW is running, the install is refused and shown as a problem instead.
 - `check_wow_running`: off by default, so the tool installs even while WoW is running (updates show up after /reload or a restart). Turn it on, or use Settings > Check if WoW is running, to get the warning and question described under Safety. Also in Settings.
 - `keep_downloads`: keep zips after a successful install. By default they are deleted to save space, but kept after a failure so a retry doesn't download them again.
 

@@ -17,6 +17,8 @@ export interface Config {
   keep_downloads: boolean;
   /** refuse or ask before installing while WoW is running (off: install anyway) */
   check_wow_running: boolean;
+  /** auto update mode: the open menu installs new addon versions, and a new version of this tool, without asking */
+  auto_update: boolean;
   /** addon group ids to install and update (built-in ids, plus ids from addons.json) */
   selected: string[];
   /** item id -> version to hold the addon at */
@@ -32,6 +34,7 @@ export const DEFAULT_CONFIG: Config = {
   github_token: '',
   keep_downloads: false,
   check_wow_running: false,
+  auto_update: false,
   selected: DEFAULT_SELECTED,
   pinned: {},
 };

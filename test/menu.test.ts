@@ -2,9 +2,10 @@
 // rules in cli.main for when the menu opens at all.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import path from 'node:path';
 import { PassThrough } from 'node:stream';
-import { tmpDir } from './helpers.ts';
+import { makeZip, serve, tmpDir, toc } from './helpers.ts';
 import { choose, checklist } from '../src/ui/prompts.ts';
 import { runMenu } from '../src/menu/menu.ts';
 import { main } from '../src/cli.ts';
@@ -146,8 +147,8 @@ test('menu: changing another addon does not drag you through the Spoken voice pa
 
 test('menu: the Spoken voice packs can be changed later under Settings', async () => {
   const { configDir, deps } = setup();
-  // Settings (5) > Spoken voice packs (3): toggle Books off, confirm; Settings > Back (5); Exit.
-  const s = scripted(['5', '3', '2', '', '5', '6']);
+  // Settings (5) > Spoken voice packs (3): toggle Books off, confirm; Settings > Back (6); Exit.
+  const s = scripted(['5', '3', '2', '', '6', '6']);
   await runMenu({}, deps, s.io);
   const cfg = loadConfig(configDir);
   assert.equal(cfg.include_books, false);
@@ -158,13 +159,13 @@ test('menu: the Spoken voice packs can be changed later under Settings', async (
 test('menu: the running-WoW check is off by default and can be switched on under Settings', async () => {
   const { configDir, deps } = setup();
   assert.equal(loadConfig(configDir).check_wow_running, false);
-  // Settings (5) > Check if WoW is running (4) > Ask first (2); Settings > Back (5); Exit (6).
-  const s = scripted(['5', '4', '2', '5', '6']);
+  // Settings (5) > Check if WoW is running (5) > Ask first (2); Settings > Back (6); Exit (6).
+  const s = scripted(['5', '5', '2', '6', '6']);
   await runMenu({}, deps, s.io);
   assert.equal(loadConfig(configDir).check_wow_running, true);
   assert.equal(s.left(), 0);
   // And back off: Install anyway (1).
-  const s2 = scripted(['5', '4', '1', '5', '6']);
+  const s2 = scripted(['5', '5', '1', '6', '6']);
   await runMenu({}, deps, s2.io);
   assert.equal(loadConfig(configDir).check_wow_running, false);
 });
@@ -237,6 +238,57 @@ test('menu refresh asks the source to look again (it caches what it fetched)', a
   await run;
   assert.ok(invalidated >= 2, 'every refresh invalidated the source, the first draw did not');
   assert.ok(invalidated <= looks() - 1);
+});
+
+test('auto update mode installs new addon versions on its own; off, it only shows them', async () => {
+  const zip = makeZip({ 'NodeSight/NodeSight.toc': toc('2.0.0', '16001'), 'NodeSight/main.lua': 'x' });
+  const srv = await serve({ '/n.zip': zip });
+  try {
+    for (const auto of [false, true]) {
+      const { deps, configDir } = setup({ selected: ['nodesight'], auto_update: auto });
+      const addons = loadConfig(configDir).addons_path;
+      fs.mkdirSync(addons, { recursive: true });
+      const release = { version: '2.0.0', tag: 'v2.0.0', source: 'Fake', asset: { name: 'NodeSight-2.0.0.zip', url: `${srv.url}/n.zip`, size: zip.length, sha256: null } };
+      const k = keyboard();
+      const run = runMenu({}, { ...deps, source: { name: 'Fake', latest: async () => release } }, k.io);
+      await until(() => k.text().includes('What would you like to do?'));
+      if (auto) {
+        assert.match(k.text(), /everything is up to date/, 'the menu was redrawn after installing');
+        assert.ok(fs.existsSync(path.join(addons, 'NodeSight', 'main.lua')), 'installed without asking');
+      } else {
+        assert.match(k.text(), /1 to install or update/, 'only shown');
+        assert.ok(!fs.existsSync(path.join(addons, 'NodeSight')), 'nothing installed');
+      }
+      await k.press(['q']);
+      assert.equal(await run, 0);
+    }
+  } finally {
+    await srv.close();
+  }
+});
+
+test('auto update mode takes a new version of this tool without asking; the switch is under Settings', async () => {
+  const { deps, configDir } = setup({ selected: ['nodesight'], auto_update: true });
+  const calls = { apply: 0 };
+  const asked: string[] = [];
+  const k = keyboard();
+  const io = { ...k.io, ask: async (q: string) => { asked.push(q); return 'n'; } };
+  const selfUpdate = { check: async () => '9.9.9', apply: async () => { calls.apply++; } };
+  const run = runMenu({}, { ...deps, selfUpdate }, io, '2.0.0', 40);
+  try {
+    await until(() => calls.apply >= 1);
+  } finally {
+    await k.press(['q']);
+  }
+  await run;
+  assert.deepEqual(asked, [], 'no question was asked');
+  // Settings (5) > Auto update mode (4) > Off (1); Back (6); Exit (6).
+  const s = scripted(['5', '4', '1', '6', '6']);
+  await runMenu({}, deps, s.io);
+  assert.equal(loadConfig(configDir).auto_update, false);
+  const s2 = scripted(['5', '4', '2', '6', '6']);
+  await runMenu({}, deps, s2.io);
+  assert.equal(loadConfig(configDir).auto_update, true);
 });
 
 test('menu refresh offers a newer version of this tool: yes updates and restarts, no is remembered', async () => {

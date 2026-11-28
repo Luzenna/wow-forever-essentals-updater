@@ -55,6 +55,17 @@ async function toggleRunningCheck(deps: Deps, io: IO) {
   log.info(`${paint('green', sym().ok)} ${picked === 'on' ? 'I will ask before installing while WoW is running.' : 'I will install even while WoW is running.'}`);
 }
 
+async function toggleAutoUpdate(deps: Deps, io: IO) {
+  const cfg = loadConfig(deps.configDir);
+  const picked = await choose(`Auto update mode (now: ${cfg.auto_update ? 'on' : 'off'})`, [
+    { value: 'off', label: 'Off', hint: 'I tell you when something is new, you decide' },
+    { value: 'on', label: 'On', hint: 'while this menu is open, install new addon versions and a new version of this tool by itself' },
+  ], io);
+  if (picked === null) return;
+  saveConfig(deps.configDir, { ...cfg, auto_update: picked === 'on' });
+  log.info(`${paint('green', sym().ok)} Auto update mode ${picked === 'on' ? 'on' : 'off'}.`);
+}
+
 export async function settings(deps: Deps, io: IO) {
   for (;;) {
     clearScreen(io.output);
@@ -62,11 +73,13 @@ export async function settings(deps: Deps, io: IO) {
       { value: 'folder', label: 'WoW AddOns folder', hint: 'where addons are installed' },
       { value: 'language', label: 'Spoken voice language', hint: 'extra languages for the voiceovers' },
       { value: 'voices', label: 'Spoken voice packs', hint: 'zone and book voices (about 470 MB each)' },
+      { value: 'auto', label: 'Auto update mode', hint: 'install everything new by itself' },
       { value: 'running', label: 'Check if WoW is running', hint: 'off: install anyway' },
       { value: 'back', label: 'Back' },
     ], io);
     if (what === 'folder') await pickAddonsFolder(deps, io);
     else if (what === 'language') await pickLanguage(deps, io);
+    else if (what === 'auto') await toggleAutoUpdate(deps, io);
     else if (what === 'running') await toggleRunningCheck(deps, io);
     else if (what === 'voices') await pickVoicePacks(deps, io);
     else return;
