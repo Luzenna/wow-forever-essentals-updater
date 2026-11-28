@@ -52,6 +52,7 @@ export class WagoSource {
   fetch: typeof fetch;
   retry: Parameters<typeof withRetry>[1];
   pages: Map<string, Promise<WagoRelease | null>>;
+  #queue: Promise<unknown> = Promise.resolve();
 
   constructor(opts: { base?: string; fetchImpl?: typeof fetch; retry?: Parameters<typeof withRetry>[1] } = {}) {
     this.base = (opts.base ?? 'https://addons.wago.io').replace(/\/+$/, '');
@@ -92,6 +93,32 @@ export class WagoSource {
     }
   }
 
+  /**
+   * Follow a download link once, to learn the file's real address and size. One at a time: the menu asks
+   * for every Wago addon at the same moment, and a burst of nine requests is what a rate limit looks for.
+   * A refused HEAD (403/405) is tried again as a GET of one byte, which says the same thing.
+   */
+  #resolve(link: URL): Promise<{ url: string; size: number }> {
+    const run = async () => {
+      const refused = (r: Response) => Object.assign(new HttpError(link.href, r.status, r.headers), {
+        message: `HTTP ${r.status} for ${link.href} (server: ${r.headers.get('server') ?? '?'}${r.headers.get('cf-mitigated') ? `, cf-mitigated: ${r.headers.get('cf-mitigated')}` : ''})`,
+      });
+      return withRetry(async () => {
+        const h = await this.fetch(link, { method: 'HEAD', redirect: 'follow', headers: { 'User-Agent': USER_AGENT } });
+        if (h.ok) return { url: h.url, size: Number(h.headers.get('content-length')) };
+        if (h.status !== 403 && h.status !== 405) throw new HttpError(link.href, h.status, h.headers);
+        const g = await this.fetch(link, { redirect: 'follow', headers: { 'User-Agent': USER_AGENT, Range: 'bytes=0-0' } });
+        void g.body?.cancel().catch(() => {});
+        if (!g.ok) throw refused(g);
+        const total = /\/(\d+)\s*$/.exec(g.headers.get('content-range') ?? '')?.[1];
+        return { url: g.url, size: g.status === 206 ? Number(total) : Number(g.headers.get('content-length')) };
+      }, this.retry);
+    };
+    const next = this.#queue.then(run, run);
+    this.#queue = next.catch(() => {});
+    return next;
+  }
+
   async latest(item: Item): Promise<Release | null> {
     const slug = item.wago;
     if (!slug) throw new Error(`${item.id} has no Wago slug`);
@@ -111,12 +138,8 @@ export class WagoSource {
     // The link must stay on Wago; it is only ever followed from here.
     const link = new URL(r.download_link, this.base);
     if (link.origin !== new URL(this.base).origin) throw new Error(`${slug} on Wago: download link points to ${link.origin}`);
-    const head = await withRetry(async () => {
-      const h = await this.fetch(link, { method: 'HEAD', redirect: 'follow', headers: { 'User-Agent': USER_AGENT } });
-      if (!h.ok) throw new HttpError(link.href, h.status, h.headers);
-      return h;
-    }, this.retry);
-    const size = Number(head.headers.get('content-length'));
+    const head = await this.#resolve(link);
+    const size = head.size;
     if (!Number.isFinite(size) || size <= 0) throw new Error(`${slug} on Wago: the download does not say how big it is`);
     // The address the link redirects to is a plain file URL that does not expire.
     const file = new URL(head.url || link.href);

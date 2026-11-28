@@ -139,6 +139,22 @@ test('a label that is the zip file name ("DungeonJournal2.1.6.zip") reads as its
   }
 });
 
+test('a download link that refuses HEAD (403) is read with a one-byte GET instead; both refused is an error that names the server', async () => {
+  const w = await fakeWago({ baganator: { folders: ['Baganator'], label: '839' } });
+  try {
+    const noHead: typeof fetch = (input, init) => (init?.method === 'HEAD' && String(input).includes('/download/')
+      ? Promise.resolve(new Response(null, { status: 403 })) : fetch(input, init));
+    const ok = await new WagoSource({ base: w.url, fetchImpl: noHead, retry: { retries: 0 } }).latest(wagoItem('baganator', 'baganator'));
+    assert.equal(ok?.version, '839');
+    assert.ok((ok?.asset.size ?? 0) > 0, 'size came from the GET');
+    const never: typeof fetch = (input, init) => (String(input).includes('/download/')
+      ? Promise.resolve(new Response(null, { status: 403, headers: { server: 'cloudflare', 'cf-mitigated': 'challenge' } })) : fetch(input, init));
+    await assert.rejects(new WagoSource({ base: w.url, fetchImpl: never, retry: { retries: 0 } }).latest(wagoItem('baganator', 'baganator')), /HTTP 403.*server: cloudflare, cf-mitigated: challenge/);
+  } finally {
+    await w.close();
+  }
+});
+
 test('WagoSource: no forever build is "no release", an unknown addon and a pin are plain errors', async () => {
   const w = await fakeWago({ old: { folders: ['Old'], label: '3', noForever: true }, baganator: { folders: ['Baganator'], label: '839' } });
   try {
