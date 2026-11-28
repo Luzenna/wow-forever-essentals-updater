@@ -131,6 +131,8 @@ export function cleanupOld(exe: string): void {
 
 /** Set in the environment of the restarted copy, which must not look for an update again. */
 export const RELAUNCHED = 'WFE_RELAUNCHED';
+/** set for the restarted copy: the version it replaced, so it can say the updater itself was updated */
+export const UPDATED_FROM = 'WFE_UPDATED_FROM';
 
 /**
  * What the menu uses to keep itself current while it stays open: packaged builds only. `apply` is the
@@ -147,7 +149,7 @@ export function menuSelfUpdate(version: string, cacheDir: string, isSea: boolean
       }
     },
     apply: () => {
-      const { [RELAUNCHED]: _drop, ...env } = process.env;
+      const { [RELAUNCHED]: _drop, [UPDATED_FROM]: _from, ...env } = process.env;
       return trySelfUpdate(version, cacheDir, { env });
     },
   };
@@ -186,7 +188,7 @@ export async function trySelfUpdate(
   if (!updated) return;
 
   log.info('Restarting with the new version...');
-  const res = (seams.spawn ?? spawnSync)(exe, seams.args ?? process.argv.slice(2), { stdio: 'inherit', env: { ...env, [RELAUNCHED]: '1' } });
+  const res = (seams.spawn ?? spawnSync)(exe, seams.args ?? process.argv.slice(2), { stdio: 'inherit', env: { ...env, [RELAUNCHED]: '1', [UPDATED_FROM]: version } });
   if (res.error) {
     log.warn(`Could not restart automatically (${res.error.message}). Start it again to use the new version.`);
     return;

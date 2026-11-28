@@ -69,12 +69,13 @@ async function toggleAutoUpdate(deps: Deps, io: IO) {
 export async function settings(deps: Deps, io: IO) {
   for (;;) {
     clearScreen(io.output);
+    const cfg = loadConfig(deps.configDir);
     const what = await choose('Settings', [
       { value: 'folder', label: 'WoW AddOns folder', hint: 'where addons are installed' },
       { value: 'language', label: 'Spoken voice language', hint: 'extra languages for the voiceovers' },
       { value: 'voices', label: 'Spoken voice packs', hint: 'zone and book voices (about 470 MB each)' },
-      { value: 'auto', label: 'Auto update mode', hint: 'install everything new by itself' },
-      { value: 'running', label: 'Check if WoW is running', hint: 'off: install anyway' },
+      { value: 'auto', label: 'Auto update mode', hint: `${cfg.auto_update ? 'on' : 'off'}: install everything new by itself` },
+      { value: 'running', label: 'Check if WoW is running', hint: cfg.check_wow_running ? 'on: ask before installing' : 'off: install anyway' },
       { value: 'back', label: 'Back' },
     ], io);
     if (what === 'folder') await pickAddonsFolder(deps, io);

@@ -267,6 +267,37 @@ test('auto update mode installs new addon versions on its own; off, it only show
   }
 });
 
+test('auto update notifications name the addons updated, and the updater when it was updated too', async () => {
+  const zip = makeZip({ 'NodeSight/NodeSight.toc': toc('2.0.0', '16001'), 'NodeSight/main.lua': 'x' });
+  const srv = await serve({ '/n.zip': zip });
+  try {
+    const { deps } = setup({ selected: ['nodesight'], auto_update: true });
+    fs.mkdirSync(loadConfig(deps.configDir).addons_path, { recursive: true });
+    const release = { version: '2.0.0', tag: 'v2.0.0', source: 'Fake', asset: { name: 'NodeSight-2.0.0.zip', url: `${srv.url}/n.zip`, size: zip.length, sha256: null } };
+    const notes: string[][] = [];
+    const k = keyboard();
+    // This copy was started by a self-update from 2.0.0 (the env the old copy hands over).
+    const run = runMenu({}, { ...deps, env: { WFE_UPDATED_FROM: '2.0.0' } as any, source: { name: 'Fake', latest: async () => release }, notify: (t, b) => { notes.push([t, b]); } }, k.io, '2.1.0');
+    await until(() => notes.length >= 1);
+    await k.press(['q']);
+    await run;
+    assert.equal(notes[0][0], 'WoW Forever: auto update');
+    assert.match(notes[0][1], /The updater itself was updated \(2\.0\.0 -> 2\.1\.0\)/);
+    assert.match(notes[0][1], /Updated: NodeSight 2\.0\.0/);
+  } finally {
+    await srv.close();
+  }
+  // And before it restarts into a new version of itself, the notification says which versions.
+  const { deps } = setup({ selected: ['nodesight'], auto_update: true });
+  const notes: string[][] = [];
+  const k = keyboard();
+  const run = runMenu({}, { ...deps, notify: (t, b) => { notes.push([t, b]); }, selfUpdate: { check: async () => '9.9.9', apply: async () => {} } }, k.io, '2.0.0', 40);
+  await until(() => notes.length >= 1);
+  await k.press(['q']);
+  await run;
+  assert.deepEqual(notes[0], ['WoW Forever: updating the updater', '2.0.0 -> 9.9.9, restarting now']);
+});
+
 test('auto update mode takes a new version of this tool without asking; the switch is under Settings', async () => {
   const { deps, configDir } = setup({ selected: ['nodesight'], auto_update: true });
   const calls = { apply: 0 };

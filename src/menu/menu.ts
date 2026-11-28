@@ -15,6 +15,7 @@ import { dashboard } from './dashboard.ts';
 import { selectAddons, manageAddons } from './addons.ts';
 import { settings } from './settings.ts';
 import { loadConfig } from '../config/config.ts';
+import { UPDATED_FROM } from '../selfupdate.ts';
 
 function defaultIO(deps: Deps): IO {
   return stdIO(makeAsk(deps));
@@ -43,7 +44,8 @@ async function offerSelfUpdate(deps: Deps, self: SelfUpdater, io: IO, version: s
   const next = await self.check();
   if (!next || declined.has(next)) return;
   io.output.write('');
-  deps.notify?.('WoW Forever: updater update', `Version ${next} is available${version ? ` (you have ${version})` : ''}`);
+  if (auto) deps.notify?.('WoW Forever: updating the updater', `${version ? `${version} -> ` : 'To '}${next}, restarting now`);
+  else deps.notify?.('WoW Forever: updater update', `Version ${next} is available${version ? ` (you have ${version})` : ''}`);
   // Auto update mode does not ask. A failed try is remembered like a no, so it is not repeated every cycle.
   const ans = auto ? 'y' : (await io.ask(`
   ${paint('yellow', `wow-forever-essentals-updater ${next} is available${version ? ` (you have ${version})` : ''}.`)}
@@ -72,6 +74,7 @@ export async function runMenu(opts: Options, deps: Deps, ioOverride?: IO, versio
   let refreshed = false;
   let canAuto = true; // auto update mode acts on the first look and on timer refreshes, not after what the user did
   let notice = '';
+  let selfReported = false;
   for (;;) {
     clearScreen(io.output);
     // The source remembers what it fetched; a refresh has to ask again to see anything new.
@@ -102,8 +105,13 @@ export async function runMenu(opts: Options, deps: Deps, ioOverride?: IO, versio
       } catch (e) {
         failed = (e as Error).message;
       }
-      notice = failed ? paint('red', `Auto update: ${failed}`) : paint('green', `${sym().ok} Auto update: ${todo} addon${todo === 1 ? '' : 's'} installed at ${clock()}`);
-      deps.notify?.('WoW Forever: auto update', failed ? `Problem: ${failed}` : `${todo} addon${todo === 1 ? '' : 's'} installed`);
+      const names = [...found.values()].join(', ');
+      // This copy was started by a self-update: say so once, in the first notification.
+      const from = ((deps.env ?? process.env) as Record<string, string | undefined>)[UPDATED_FROM];
+      const self = from && !selfReported ? `The updater itself was updated (${from} -> ${version || 'new version'}). ` : '';
+      selfReported = true;
+      notice = failed ? paint('red', `Auto update: ${failed}`) : paint('green', `${sym().ok} Auto update: installed ${names} at ${clock()}`);
+      deps.notify?.('WoW Forever: auto update', failed ? `${self}Problem: ${failed} (wanted: ${names})` : `${self}Updated: ${names}`);
       canAuto = false;
       refreshed = false;
       continue;
